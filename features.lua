@@ -1,6 +1,6 @@
 -- ============================================================
 -- VRILZHUB FEATURES — RIDE A FISH
--- Speed · Auto Steal · Auto Return (200 studs step) · Auto Deposit
+-- Speed · Auto Steal · Auto Return · Auto Deposit · Auto Hatch
 -- ============================================================
 
 local Players = game:GetService("Players")
@@ -15,7 +15,7 @@ local TIER_ORDER = {
     "Abyss", "Trench", "Sovereign", "Celestial", "Eternal"
 }
 
--- ⭐ STEP SETTING (200 studs per step)
+-- ⭐ STEP SETTING
 local STEP_SIZE = 200
 local STEP_TIME = 0.15
 
@@ -34,6 +34,7 @@ local State = {
     AutoReturn_Enabled = true,
     AutoReturn_AfterSteal = true,
     AutoDeposit_Enabled = true,
+    AutoHatch_Enabled = true,       -- ⭐ NEW
 }
 
 local isBusy = false
@@ -58,7 +59,7 @@ local function getHum()
 end
 
 -- ============================================================
--- SMOOTH TP STEP BY STEP (TWEEN)
+-- SMOOTH TP
 -- ============================================================
 local function smoothTp(hrp, targetPos, stepSize, stepTime)
     stepSize = stepSize or STEP_SIZE
@@ -68,8 +69,6 @@ local function smoothTp(hrp, targetPos, stepSize, stepTime)
 
     local totalDist = (targetPos - hrp.Position).Magnitude
     local steps = math.ceil(totalDist / stepSize)
-
-    print("[TP] 🚶 " .. math.floor(totalDist) .. " studs | " .. steps .. " steps")
 
     for i = 1, steps do
         local h = getHRP()
@@ -154,19 +153,16 @@ local function isHoldingEgg()
     local char = LP.Character
     if not char then return false end
 
-    -- Cek 1: Model CarriedSeaEgg di character
     if char:FindFirstChild("CarriedSeaEgg") then
         return true, char.CarriedSeaEgg
     end
 
-    -- Cek 2: Tool apapun di character (kecuali Milkfish)
     for _, tool in ipairs(char:GetChildren()) do
         if tool:IsA("Tool") and tool.Name ~= "Milkfish" then
             return true, tool
         end
     end
 
-    -- Cek 3: Tool di backpack (kecuali Milkfish)
     local backpack = LP:FindFirstChild("Backpack")
     if backpack then
         for _, tool in ipairs(backpack:GetChildren()) do
@@ -208,15 +204,9 @@ end
 
 Features.returnToPlot = function()
     local hrp = getHRP()
-    if not hrp then
-        print("[Return] ❌ No HRP")
-        return false
-    end
+    if not hrp then return false end
     local pos = getPlotPosition()
-    if not pos then
-        print("[Return] ❌ No plot position")
-        return false
-    end
+    if not pos then return false end
 
     print("[Return] 🏠 Returning step-by-step...")
     smoothTp(hrp, pos + Vector3.new(0, 5, 0))
@@ -225,35 +215,8 @@ Features.returnToPlot = function()
 end
 
 -- ============================================================
--- HATCHRACK
+-- HATCHRACK HELPERS
 -- ============================================================
-local function findEmptyHatchPrompt()
-    local plot = getMyPlot()
-    if not plot then return nil end
-    local rack = plot:FindFirstChild("HatchRack")
-    if not rack then return nil end
-
-    for _, prompt in ipairs(rack:GetDescendants()) do
-        if prompt:IsA("ProximityPrompt") and prompt.Name == "DepositSeaEgg" and prompt.Enabled then
-            local eggInteract = prompt.Parent
-            local slotBox = eggInteract and eggInteract.Parent
-            if slotBox then
-                local hasEgg = false
-                for _, child in ipairs(slotBox:GetChildren()) do
-                    if child:IsA("Model") and child:FindFirstChild("EggRoot") then
-                        hasEgg = true
-                        break
-                    end
-                end
-                if not hasEgg then
-                    return prompt
-                end
-            end
-        end
-    end
-    return nil
-end
-
 local function getPromptPart(prompt)
     local p = prompt.Parent
     while p and not p:IsA("BasePart") do
@@ -262,27 +225,20 @@ local function getPromptPart(prompt)
     return p
 end
 
-Features.depositEgg = function()
-    local hrp = getHRP()
-    if not hrp then return false end
-
-    if not isHoldingEgg() then
-        print("[Deposit] ❌ Ga bawa egg")
-        return false
-    end
-
-    local prompt = findEmptyHatchPrompt()
-    if not prompt then
-        print("[Deposit] ❌ Ga ada slot kosong")
-        return false
-    end
-
+-- Fire prompt (dengan hold)
+local function firePrompt(prompt)
+    if not prompt then return false end
     local part = getPromptPart(prompt)
     if not part then return false end
 
-    print("[Deposit] 📦 TP ke slot...")
-    smoothTp(hrp, part.Position + Vector3.new(0, 3, 0))
-    task.wait(0.3)
+    local hrp = getHRP()
+    if not hrp then return false end
+
+    -- TP instant ke prompt (biar cepet, bukan step by step)
+    pcall(function()
+        hrp.CFrame = CFrame.new(part.Position + Vector3.new(0, 3, 0))
+    end)
+    task.wait(0.15)
 
     local holdTime = (prompt.HoldDuration > 0) and prompt.HoldDuration or 0.3
     if fireproximityprompt then
@@ -297,39 +253,130 @@ Features.depositEgg = function()
         task.wait(0.2)
     end
 
-    print("[Deposit] ✅ Done")
+    return true
+end
+
+-- Cari slot dengan status tertentu
+local function findSlotByStatus(status)
+    local plot = getMyPlot()
+    if not plot then return nil end
+    local rack = plot:FindFirstChild("HatchRack")
+    if not rack then return nil end
+
+    for _, eggInteract in ipairs(rack:GetDescendants()) do
+        if eggInteract:IsA("BasePart") and eggInteract.Name == "EggHatchInteraction" then
+            local slotStatus = eggInteract:GetAttribute("Status")
+            if slotStatus == status then
+                return eggInteract
+            end
+        end
+    end
+    return nil
+end
+
+-- Cari prompt spesifik di slot
+local function getPromptFromSlot(eggInteract, promptName)
+    if not eggInteract then return nil end
+    for _, p in ipairs(eggInteract:GetDescendants()) do
+        if p:IsA("ProximityPrompt") and p.Name == promptName and p.Enabled then
+            return p
+        end
+    end
+    return nil
+end
+
+-- ============================================================
+-- AUTO HATCH
+-- ============================================================
+Features.autoHatchOnce = function()
+    -- 1. Cari slot "Ready" → hatch
+    local readySlot = findSlotByStatus("Ready")
+    if readySlot then
+        local hatchPrompt = getPromptFromSlot(readySlot, "HatchEggPrompt")
+        if hatchPrompt then
+            print("[AutoHatch] 🐣 Hatching ready egg...")
+            firePrompt(hatchPrompt)
+            return true
+        end
+    end
+
+    -- 2. Cari slot "Growing" → skip grow
+    local growingSlot = findSlotByStatus("Growing")
+    if growingSlot then
+        local skipPrompt = getPromptFromSlot(growingSlot, "SkipGrowPrompt")
+        if skipPrompt then
+            print("[AutoHatch] ⏩ Skipping grow...")
+            firePrompt(skipPrompt)
+            return true
+        end
+    end
+
+    return false
+end
+
+-- Loop Auto Hatch (background)
+task.spawn(function()
+    while task.wait(1) do
+        if State.AutoHatch_Enabled and State.AutoSteal_Enabled then
+            Features.autoHatchOnce()
+        end
+    end
+end)
+
+-- ============================================================
+-- DEPOSIT
+-- ============================================================
+Features.depositEgg = function()
+    local hrp = getHRP()
+    if not hrp then return false end
+
+    if not isHoldingEgg() then
+        print("[Deposit] ❌ Ga bawa egg")
+        return false
+    end
+
+    -- Cari slot kosong
+    local emptySlot = findSlotByStatus("Empty")
+    if not emptySlot then
+        print("[Deposit] ⚠️ Ga ada slot kosong — coba auto hatch dulu")
+        -- Coba hatch dulu
+        local hatched = Features.autoHatchOnce()
+        if hatched then
+            task.wait(1.5)  -- tunggu hatch selesai
+            emptySlot = findSlotByStatus("Empty")
+        end
+
+        if not emptySlot then
+            print("[Deposit] ❌ Masih ga ada slot kosong")
+            return false
+        end
+    end
+
+    local prompt = getPromptFromSlot(emptySlot, "DepositSeaEgg")
+    if not prompt then
+        print("[Deposit] ❌ Prompt DepositSeaEgg ga ketemu")
+        return false
+    end
+
+    print("[Deposit] 📦 Depositing to slot " .. tostring(emptySlot:GetAttribute("HatchSlot")))
+    firePrompt(prompt)
     return true
 end
 
 -- ============================================================
--- STEAL — TUNGGU SAMPE EGG BENERAN MASUK
+-- STEAL
 -- ============================================================
 local function stealEgg(egg, hrp)
-    if not egg or not egg.Parent then
-        print("[Steal] ❌ Egg invalid")
-        return false
-    end
-
+    if not egg or not egg.Parent then return false end
     local eggRoot = egg:FindFirstChild("EggRoot")
-    if not eggRoot then
-        print("[Steal] ❌ EggRoot ga ketemu")
-        return false
-    end
-
+    if not eggRoot then return false end
     local prompt = eggRoot:FindFirstChild("TakeSeaEgg")
-    if not prompt then
-        print("[Steal] ❌ Prompt TakeSeaEgg ga ketemu")
-        return false
-    end
+    if not prompt then return false end
 
-    -- ⭐ STEP 1: TP smooth ke egg
     print("[Steal] 🚶 TP ke egg (" .. egg.Name .. ")")
     smoothTp(hrp, eggRoot.Position + Vector3.new(0, 3, 0))
-
-    -- ⭐ STEP 2: Tunggu 0.3s biar server detect posisi
     task.wait(0.3)
 
-    -- ⭐ STEP 3: Fire prompt
     print("[Steal] 🎯 Fire prompt...")
     local holdTime = (prompt.HoldDuration > 0) and prompt.HoldDuration or 0.3
     if fireproximityprompt then
@@ -342,7 +389,6 @@ local function stealEgg(egg, hrp)
         end)
     end
 
-    -- ⭐ STEP 4: TUNGGU SAMPE EGG BENERAN MASUK (max 3s)
     print("[Steal] ⏳ Nunggu egg masuk...")
     local waitStart = tick()
     while tick() - waitStart < 3 do
@@ -381,9 +427,7 @@ task.spawn(function()
             local hrp = getHRP()
             if not hrp then return end
 
-            -- ═══════════════════════════════════════
             -- STEP 1: Cari egg target
-            -- ═══════════════════════════════════════
             local eggs = getWildEggs()
             local target = nil
             local closestDist = math.huge
@@ -406,15 +450,12 @@ task.spawn(function()
                 return
             end
 
-            -- ═══════════════════════════════════════
             -- STEP 2: STEAL
-            -- ═══════════════════════════════════════
             print("[AutoFarm] ════════════════════")
             print("[AutoFarm] 🥚 Target: " .. target.Name)
 
             local stealOk = stealEgg(target, hrp)
 
-            -- ⭐ STEP 3: KALO STEAL GAGAL, JANGAN RETURN
             if not stealOk then
                 print("[AutoFarm] ⚠️ Steal gagal, SKIP return + deposit")
                 print("[AutoFarm] ════════════════════")
@@ -424,18 +465,14 @@ task.spawn(function()
             print("[AutoFarm] ✅ Steal sukses")
             task.wait(0.3)
 
-            -- ═══════════════════════════════════════
-            -- STEP 4: RETURN (cuma kalo steal sukses)
-            -- ═══════════════════════════════════════
+            -- STEP 3: RETURN
             if State.AutoReturn_Enabled and State.AutoReturn_AfterSteal then
                 print("[AutoFarm] 🏠 Returning...")
                 Features.returnToPlot()
                 task.wait(0.3)
             end
 
-            -- ═══════════════════════════════════════
-            -- STEP 5: DEPOSIT
-            -- ═══════════════════════════════════════
+            -- STEP 4: DEPOSIT
             if State.AutoDeposit_Enabled and isHoldingEgg() then
                 print("[AutoFarm] 📦 Depositing...")
                 Features.depositEgg()
@@ -464,6 +501,7 @@ Features.setAutoStealDelay = function(v) State.AutoSteal_Delay = v end
 Features.setAutoReturnEnabled = function(v) State.AutoReturn_Enabled = v end
 Features.setAutoReturnAfterSteal = function(v) State.AutoReturn_AfterSteal = v end
 Features.setAutoDepositEnabled = function(v) State.AutoDeposit_Enabled = v end
+Features.setAutoHatchEnabled = function(v) State.AutoHatch_Enabled = v end
 
 Features.getEggCountByTier = function()
     local counts = {}
@@ -475,6 +513,27 @@ Features.getEggCountByTier = function()
     return counts
 end
 
+-- Cek status semua slot (buat UI counter)
+Features.getSlotStatus = function()
+    local result = { Empty = 0, Growing = 0, Ready = 0, Other = 0 }
+    local plot = getMyPlot()
+    if not plot then return result end
+    local rack = plot:FindFirstChild("HatchRack")
+    if not rack then return result end
+
+    for _, eggInteract in ipairs(rack:GetDescendants()) do
+        if eggInteract:IsA("BasePart") and eggInteract.Name == "EggHatchInteraction" then
+            local status = eggInteract:GetAttribute("Status") or "Other"
+            if result[status] then
+                result[status] = result[status] + 1
+            else
+                result.Other = result.Other + 1
+            end
+        end
+    end
+    return result
+end
+
 Features.getTierOrder = function() return TIER_ORDER end
 Features.getState = function() return State end
 Features.isHoldingEgg = isHoldingEgg
@@ -482,6 +541,6 @@ Features.getMyPlot = getMyPlot
 
 print("[Features] Ride a Fish loaded ✅")
 print("[Features] WildEggs: " .. #getWildEggs())
-print("[Features] Step: " .. STEP_SIZE .. " studs | Time: " .. STEP_TIME .. "s")
+print("[Features] Step: " .. STEP_SIZE .. " studs")
 
 return Features
