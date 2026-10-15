@@ -1,9 +1,10 @@
 -- ============================================================
 -- VRILZHUB FEATURES — RIDE A FISH
--- Speed · Auto Steal · Auto Return · Auto Deposit
+-- Speed · Auto Steal · Auto Return (step by step smooth) · Auto Deposit
 -- ============================================================
 
 local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
 local LP = Players.LocalPlayer
 
 local Features = {}
@@ -13,6 +14,10 @@ local TIER_ORDER = {
     "Common", "Coral", "Reef", "Tidal", "Deep",
     "Abyss", "Trench", "Sovereign", "Celestial", "Eternal"
 }
+
+-- ⭐ TP STEP SETTING
+local STEP_SIZE = 100       -- jarak per step (studs)
+local STEP_TIME = 0.15      -- waktu per step (detik)
 
 -- ============================================================
 -- STATE
@@ -31,7 +36,6 @@ local State = {
     AutoDeposit_Enabled = true,
 }
 
--- ⭐ LOCK global
 local isBusy = false
 
 -- ============================================================
@@ -52,6 +56,43 @@ local function getHum()
     local char = getChar()
     return char:WaitForChild("Humanoid", 5)
 end
+
+-- ============================================================
+-- SMOOTH TP STEP BY STEP (TWEEN)
+-- ============================================================
+local function smoothTp(hrp, targetPos, stepSize, stepTime)
+    stepSize = stepSize or STEP_SIZE
+    stepTime = stepTime or STEP_TIME
+
+    local totalDist = (targetPos - hrp.Position).Magnitude
+    local steps = math.ceil(totalDist / stepSize)
+
+    for i = 1, steps do
+        local h = getHRP()
+        if not h then break end
+
+        local currentPos = h.Position
+        local delta = targetPos - currentPos
+        local dist = delta.Magnitude
+
+        if dist < 5 then break end
+
+        local stepDist = math.min(stepSize, dist)
+        local nextPos = currentPos + delta.Unit * stepDist
+
+        local tween = TweenService:Create(
+            h,
+            TweenInfo.new(stepTime, Enum.EasingStyle.Linear),
+            { CFrame = CFrame.new(nextPos) }
+        )
+        tween:Play()
+        tween.Completed:Wait()
+    end
+
+    return true
+end
+
+Features.smoothTp = smoothTp
 
 -- ============================================================
 -- SPEED
@@ -129,7 +170,7 @@ local function getPlotPosition()
     return nil
 end
 
--- ⭐ RETURN: TP INSTANT (pasti jalan)
+-- ⭐ RETURN STEP BY STEP (SMOOTH)
 Features.returnToPlot = function()
     local hrp = getHRP()
     if not hrp then
@@ -144,25 +185,16 @@ Features.returnToPlot = function()
     end
 
     local target = pos + Vector3.new(0, 5, 0)
-    print("[Return] TP ke: " .. tostring(target))
+    local totalDist = (target - hrp.Position).Magnitude
+    local steps = math.ceil(totalDist / STEP_SIZE)
 
-    -- ⭐ TP INSTANT
-    pcall(function()
-        hrp.CFrame = CFrame.new(target)
-    end)
+    print("[Return] 🏠 Return step-by-step")
+    print("[Return]   Distance: " .. math.floor(totalDist) .. " studs")
+    print("[Return]   Steps: " .. steps)
 
-    -- Tunggu sampe nyampe (max 3s)
-    local waitStart = tick()
-    while tick() - waitStart < 3 do
-        local h = getHRP()
-        if h and (h.Position - pos).Magnitude < 20 then
-            print("[Return] ✅ Sampe plot")
-            return true
-        end
-        task.wait(0.1)
-    end
+    smoothTp(hrp, target)
 
-    print("[Return] ⚠️ Timeout, tapi tetep return true")
+    print("[Return] ✅ Sampe plot")
     return true
 end
 
@@ -251,11 +283,9 @@ Features.depositEgg = function()
     local part = getPromptPart(prompt)
     if not part then return false end
 
-    -- TP INSTANT ke slot
-    pcall(function()
-        hrp.CFrame = CFrame.new(part.Position + Vector3.new(0, 3, 0))
-    end)
-    task.wait(0.2)
+    -- ⭐ TP SMOOTH ke slot
+    smoothTp(hrp, part.Position + Vector3.new(0, 3, 0), 80, 0.12)
+    task.wait(0.15)
 
     -- Fire prompt
     local holdTime = (prompt.HoldDuration > 0) and prompt.HoldDuration or 0.3
@@ -285,10 +315,8 @@ local function stealEgg(egg, hrp)
     local prompt = eggRoot:FindFirstChild("TakeSeaEgg")
     if not prompt then return false end
 
-    -- TP INSTANT ke egg
-    pcall(function()
-        hrp.CFrame = CFrame.new(eggRoot.Position + Vector3.new(0, 3, 0))
-    end)
+    -- ⭐ TP SMOOTH ke egg
+    smoothTp(hrp, eggRoot.Position + Vector3.new(0, 3, 0), 150, 0.08)
     task.wait(0.15)
 
     -- Fire prompt
@@ -318,7 +346,6 @@ task.spawn(function()
             continue
         end
 
-        -- ⭐ LOCK: kalo lagi sibuk, skip
         if isBusy then
             task.wait(0.2)
             continue
@@ -329,14 +356,9 @@ task.spawn(function()
         local success, err = pcall(function()
 
             local hrp = getHRP()
-            if not hrp then
-                print("[AutoFarm] ❌ No HRP")
-                return
-            end
+            if not hrp then return end
 
-            -- ═══════════════════════════════════════
             -- STEP 1: Cari egg target
-            -- ═══════════════════════════════════════
             local eggs = getWildEggs()
             local target = nil
             local closestDist = math.huge
@@ -354,50 +376,38 @@ task.spawn(function()
             end
 
             if not target then
-                print("[AutoFarm] ⚠️ Ga ada egg yang match filter")
+                task.wait(0.5)
                 return
             end
 
-            -- ═══════════════════════════════════════
             -- STEP 2: STEAL
-            -- ═══════════════════════════════════════
             print("[AutoFarm] 🥚 Stealing: " .. target.Name)
             stealEgg(target, hrp)
 
             -- Tunggu egg masuk (max 3s)
             local waitStart = tick()
-            local gotEgg = false
             while tick() - waitStart < 3 do
                 if isHoldingEgg() then
-                    gotEgg = true
                     print("[AutoFarm] ✅ Egg picked up")
                     break
                 end
                 task.wait(0.1)
             end
 
-            if not gotEgg then
-                print("[AutoFarm] ⚠️ Egg ga masuk, tetap lanjut return")
-            end
-
             task.wait(0.3)
 
-            -- ═══════════════════════════════════════
-            -- STEP 3: RETURN — WAJIB
-            -- ═══════════════════════════════════════
-            print("[AutoFarm] 🏠 Returning to plot...")
-            Features.returnToPlot()
-            task.wait(0.5)
+            -- STEP 3: RETURN STEP BY STEP
+            if State.AutoReturn_Enabled and State.AutoReturn_AfterSteal then
+                print("[AutoFarm] 🏠 Returning...")
+                Features.returnToPlot()
+                task.wait(0.3)
+            end
 
-            -- ═══════════════════════════════════════
             -- STEP 4: DEPOSIT
-            -- ═══════════════════════════════════════
-            if isHoldingEgg() then
+            if State.AutoDeposit_Enabled and isHoldingEgg() then
                 print("[AutoFarm] 📦 Depositing...")
                 Features.depositEgg()
                 task.wait(0.5)
-            else
-                print("[AutoFarm] ⚠️ Ga bawa egg, skip deposit")
             end
 
         end)
@@ -407,7 +417,6 @@ task.spawn(function()
         end
 
         isBusy = false
-
         task.wait(0.3)
     end
 end)
@@ -415,29 +424,12 @@ end)
 -- ============================================================
 -- SETTERS
 -- ============================================================
-Features.setAutoStealEnabled = function(v)
-    State.AutoSteal_Enabled = v
-end
-
-Features.setAutoStealTier = function(tier, enabled)
-    State.AutoSteal_Tiers[tier] = enabled
-end
-
-Features.setAutoStealDelay = function(v)
-    State.AutoSteal_Delay = v
-end
-
-Features.setAutoReturnEnabled = function(v)
-    State.AutoReturn_Enabled = v
-end
-
-Features.setAutoReturnAfterSteal = function(v)
-    State.AutoReturn_AfterSteal = v
-end
-
-Features.setAutoDepositEnabled = function(v)
-    State.AutoDeposit_Enabled = v
-end
+Features.setAutoStealEnabled = function(v) State.AutoSteal_Enabled = v end
+Features.setAutoStealTier = function(tier, enabled) State.AutoSteal_Tiers[tier] = enabled end
+Features.setAutoStealDelay = function(v) State.AutoSteal_Delay = v end
+Features.setAutoReturnEnabled = function(v) State.AutoReturn_Enabled = v end
+Features.setAutoReturnAfterSteal = function(v) State.AutoReturn_AfterSteal = v end
+Features.setAutoDepositEnabled = function(v) State.AutoDeposit_Enabled = v end
 
 Features.getEggCountByTier = function()
     local counts = {}
@@ -456,5 +448,6 @@ Features.getMyPlot = getMyPlot
 
 print("[Features] Ride a Fish loaded ✅")
 print("[Features] WildEggs: " .. #getWildEggs())
+print("[Features] Step: " .. STEP_SIZE .. " studs | Time: " .. STEP_TIME .. "s")
 
 return Features
