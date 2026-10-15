@@ -15,7 +15,6 @@ local TIER_ORDER = {
     "Abyss", "Trench", "Sovereign", "Celestial", "Eternal"
 }
 
--- ⭐ STEP SETTING
 local STEP_SIZE = 200
 local STEP_TIME = 0.15
 
@@ -34,7 +33,7 @@ local State = {
     AutoReturn_Enabled = true,
     AutoReturn_AfterSteal = true,
     AutoDeposit_Enabled = true,
-    AutoHatch_Enabled = true,       -- ⭐ NEW
+    AutoHatch_Enabled = true,
 }
 
 local isBusy = false
@@ -69,6 +68,8 @@ local function smoothTp(hrp, targetPos, stepSize, stepTime)
 
     local totalDist = (targetPos - hrp.Position).Magnitude
     local steps = math.ceil(totalDist / stepSize)
+
+    print("[TP] 🚶 " .. math.floor(totalDist) .. " studs | " .. steps .. " steps")
 
     for i = 1, steps do
         local h = getHRP()
@@ -204,9 +205,15 @@ end
 
 Features.returnToPlot = function()
     local hrp = getHRP()
-    if not hrp then return false end
+    if not hrp then
+        print("[Return] ❌ No HRP")
+        return false
+    end
     local pos = getPlotPosition()
-    if not pos then return false end
+    if not pos then
+        print("[Return] ❌ No plot position")
+        return false
+    end
 
     print("[Return] 🏠 Returning step-by-step...")
     smoothTp(hrp, pos + Vector3.new(0, 5, 0))
@@ -225,7 +232,7 @@ local function getPromptPart(prompt)
     return p
 end
 
--- Fire prompt (dengan hold)
+-- Fire prompt
 local function firePrompt(prompt)
     if not prompt then return false end
     local part = getPromptPart(prompt)
@@ -234,7 +241,6 @@ local function firePrompt(prompt)
     local hrp = getHRP()
     if not hrp then return false end
 
-    -- TP instant ke prompt (biar cepet, bukan step by step)
     pcall(function()
         hrp.CFrame = CFrame.new(part.Position + Vector3.new(0, 3, 0))
     end)
@@ -285,6 +291,27 @@ local function getPromptFromSlot(eggInteract, promptName)
     return nil
 end
 
+-- ⭐ GET SLOT STATUS (buat UI counter)
+Features.getSlotStatus = function()
+    local result = { Empty = 0, Growing = 0, Ready = 0, Other = 0 }
+    local plot = getMyPlot()
+    if not plot then return result end
+    local rack = plot:FindFirstChild("HatchRack")
+    if not rack then return result end
+
+    for _, eggInteract in ipairs(rack:GetDescendants()) do
+        if eggInteract:IsA("BasePart") and eggInteract.Name == "EggHatchInteraction" then
+            local status = eggInteract:GetAttribute("Status") or "Other"
+            if result[status] then
+                result[status] = result[status] + 1
+            else
+                result.Other = result.Other + 1
+            end
+        end
+    end
+    return result
+end
+
 -- ============================================================
 -- AUTO HATCH
 -- ============================================================
@@ -314,7 +341,7 @@ Features.autoHatchOnce = function()
     return false
 end
 
--- Loop Auto Hatch (background)
+-- Background loop Auto Hatch
 task.spawn(function()
     while task.wait(1) do
         if State.AutoHatch_Enabled and State.AutoSteal_Enabled then
@@ -335,14 +362,12 @@ Features.depositEgg = function()
         return false
     end
 
-    -- Cari slot kosong
     local emptySlot = findSlotByStatus("Empty")
     if not emptySlot then
         print("[Deposit] ⚠️ Ga ada slot kosong — coba auto hatch dulu")
-        -- Coba hatch dulu
         local hatched = Features.autoHatchOnce()
         if hatched then
-            task.wait(1.5)  -- tunggu hatch selesai
+            task.wait(1.5)
             emptySlot = findSlotByStatus("Empty")
         end
 
@@ -493,7 +518,7 @@ task.spawn(function()
 end)
 
 -- ============================================================
--- SETTERS
+-- SETTERS (dipanggil dari UI)
 -- ============================================================
 Features.setAutoStealEnabled = function(v) State.AutoSteal_Enabled = v end
 Features.setAutoStealTier = function(tier, enabled) State.AutoSteal_Tiers[tier] = enabled end
@@ -511,27 +536,6 @@ Features.getEggCountByTier = function()
         counts[t] = (counts[t] or 0) + 1
     end
     return counts
-end
-
--- Cek status semua slot (buat UI counter)
-Features.getSlotStatus = function()
-    local result = { Empty = 0, Growing = 0, Ready = 0, Other = 0 }
-    local plot = getMyPlot()
-    if not plot then return result end
-    local rack = plot:FindFirstChild("HatchRack")
-    if not rack then return result end
-
-    for _, eggInteract in ipairs(rack:GetDescendants()) do
-        if eggInteract:IsA("BasePart") and eggInteract.Name == "EggHatchInteraction" then
-            local status = eggInteract:GetAttribute("Status") or "Other"
-            if result[status] then
-                result[status] = result[status] + 1
-            else
-                result.Other = result.Other + 1
-            end
-        end
-    end
-    return result
 end
 
 Features.getTierOrder = function() return TIER_ORDER end
