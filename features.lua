@@ -1,6 +1,5 @@
 -- ============================================================
 -- VRILZHUB FEATURES — RIDE A FISH
--- Speed · Auto Steal (hold prompt) · Auto Return (step by step) · Auto Deposit
 -- ============================================================
 
 local Players = game:GetService("Players")
@@ -14,9 +13,8 @@ local TIER_ORDER = {
     "Abyss", "Trench", "Sovereign", "Celestial", "Eternal"
 }
 
--- ⭐ SETTING TP STEP (bisa lu adjust)
-local RETURN_STEP = 100       -- jarak per TP (studs)
-local RETURN_DELAY = 0.08     -- delay antar step (makin besar = makin keliatan smooth)
+local RETURN_STEP = 100
+local RETURN_DELAY = 0.08
 
 -- ============================================================
 -- STATE
@@ -76,9 +74,7 @@ local function tpStepByStep(hrp, targetPos, stepSize, delay)
     for i = 1, steps do
         local stepDist = math.min(stepSize * i, totalDist)
         local nextPos = startPos + dir * stepDist
-        pcall(function()
-            hrp.CFrame = CFrame.new(nextPos)
-        end)
+        pcall(function() hrp.CFrame = CFrame.new(nextPos) end)
         task.wait(delay)
     end
 
@@ -227,22 +223,20 @@ end
 
 Features.depositEgg = function()
     local hrp = getHRP()
-    if not hrp then return false, "no hrp" end
+    if not hrp then return false end
 
     local holding = isHoldingEgg()
-    if not holding then return false, "not holding egg" end
+    if not holding then return false end
 
     local prompt = findEmptyHatchPrompt()
-    if not prompt then return false, "no empty slot" end
+    if not prompt then return false end
 
     local part = getPromptPart(prompt)
-    if not part then return false, "no prompt part" end
+    if not part then return false end
 
-    -- TP step by step ke slot
     tpStepByStep(hrp, part.Position + Vector3.new(0, 3, 0))
     task.wait(0.15)
 
-    -- Fire prompt dengan hold time
     local holdTime = (prompt.HoldDuration > 0) and prompt.HoldDuration or 0.3
     if fireproximityprompt then
         pcall(function() fireproximityprompt(prompt) end)
@@ -256,11 +250,11 @@ Features.depositEgg = function()
         task.wait(0.15)
     end
 
-    return true, "deposited"
+    return true
 end
 
 -- ============================================================
--- STEAL (with proper hold)
+-- STEAL — TUNGGU SAMPE EGG MASUK
 -- ============================================================
 local function stealEgg(egg, hrp)
     if not egg or not egg.Parent then return false end
@@ -269,50 +263,30 @@ local function stealEgg(egg, hrp)
     local prompt = eggRoot:FindFirstChild("TakeSeaEgg")
     if not prompt then return false end
 
-    -- TP INSTANT ke egg (approach cepet)
+    -- TP instant ke egg
     pcall(function()
         hrp.CFrame = CFrame.new(eggRoot.Position + Vector3.new(0, 3, 0))
     end)
     task.wait(0.15)
 
-    -- Fire prompt dengan HOLD yang bener
+    -- Fire prompt + tunggu hold
     local holdTime = (prompt.HoldDuration > 0) and prompt.HoldDuration or 0.3
-
     if fireproximityprompt then
         pcall(function() fireproximityprompt(prompt) end)
-        task.wait(holdTime + 0.2)
     else
         pcall(function()
             prompt:InputHoldBegin()
             task.wait(holdTime + 0.15)
             prompt:InputHoldEnd()
         end)
-        task.wait(0.2)
     end
 
-    -- Tunggu sampe egg beneran masuk (max 1.5s)
+    -- Tunggu sampe egg beneran masuk (max 2s)
     local startTime = tick()
-    while tick() - startTime < 1.5 do
-        local holding = false
-        local char = LP.Character
-        if char then
-            for _, tool in ipairs(char:GetChildren()) do
-                if tool:IsA("Tool") and tool.Name:lower():find("egg") and not tool.Name:lower():find("milkfish") then
-                    holding = true
-                    break
-                end
-            end
+    while tick() - startTime < 2 do
+        if isHoldingEgg() then
+            return true
         end
-        local backpack = LP:FindFirstChild("Backpack")
-        if not holding and backpack then
-            for _, tool in ipairs(backpack:GetChildren()) do
-                if tool:IsA("Tool") and tool.Name:lower():find("egg") and not tool.Name:lower():find("milkfish") then
-                    holding = true
-                    break
-                end
-            end
-        end
-        if holding then return true end
         task.wait(0.1)
     end
 
@@ -320,7 +294,7 @@ local function stealEgg(egg, hrp)
 end
 
 -- ============================================================
--- MAIN LOOP
+-- MAIN LOOP — STEAL → RETURN → DEPOSIT → REPEAT
 -- ============================================================
 task.spawn(function()
     while task.wait(0.1) do
@@ -329,7 +303,7 @@ task.spawn(function()
         local hrp = getHRP()
         if not hrp then continue end
 
-        -- Cari egg target
+        -- STEP 1: Cari egg target
         local eggs = getWildEggs()
         local target = nil
         local closestDist = math.huge
@@ -351,26 +325,22 @@ task.spawn(function()
             continue
         end
 
-        -- Steal (tunggu sampe egg beneran masuk)
-        local ok = stealEgg(target, hrp)
-        if not ok then
-            task.wait(0.3)
-            continue
-        end
+        -- STEP 2: STEAL
+        stealEgg(target, hrp)
 
-        task.wait(0.2)
-
-        -- Return
+        -- STEP 3: RETURN (SELALU — ga peduli steal sukses/gagal)
         if State.AutoReturn_Enabled and State.AutoReturn_AfterSteal then
             Features.returnToPlot()
             task.wait(0.3)
 
-            -- Deposit
+            -- STEP 4: DEPOSIT (cuma kalau bawa egg)
             if State.AutoDeposit_Enabled then
                 Features.depositEgg()
                 task.wait(0.5)
             end
         end
+
+        task.wait(State.AutoSteal_Delay)
     end
 end)
 
@@ -401,6 +371,6 @@ Features.getMyPlot = getMyPlot
 
 print("[Features] Ride a Fish loaded ✅")
 print("[Features] WildEggs: " .. #getWildEggs())
-print("[Features] TP Step: " .. RETURN_STEP .. " studs | Delay: " .. RETURN_DELAY .. "s")
+print("[Features] TP Step: " .. RETURN_STEP)
 
 return Features
