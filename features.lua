@@ -1,6 +1,6 @@
 -- ============================================================
 -- VRILZHUB FEATURES — RIDE A FISH
--- Speed · Auto Steal · Auto Return · Auto Deposit
+-- Speed · Auto Steal · Auto Return (step by step) · Auto Deposit
 -- ============================================================
 
 local Players = game:GetService("Players")
@@ -13,6 +13,10 @@ local TIER_ORDER = {
     "Common", "Coral", "Reef", "Tidal", "Deep",
     "Abyss", "Trench", "Sovereign", "Celestial", "Eternal"
 }
+
+-- ⭐ SETTING TP STEP
+local RETURN_STEP = 200       -- jarak per TP (studs)
+local RETURN_DELAY = 0.05     -- delay antar step
 
 -- ============================================================
 -- STATE
@@ -30,7 +34,6 @@ local State = {
 
     AutoReturn_Enabled = true,
     AutoReturn_AfterSteal = true,
-
     AutoDeposit_Enabled = true,
 }
 
@@ -52,6 +55,40 @@ local function getHum()
     local char = getChar()
     return char:WaitForChild("Humanoid", 5)
 end
+
+-- ============================================================
+-- STEP-BY-STEP TP
+-- ============================================================
+local function tpStepByStep(hrp, targetPos, stepSize, delay)
+    stepSize = stepSize or RETURN_STEP
+    delay = delay or RETURN_DELAY
+
+    local startPos = hrp.Position
+    local delta = targetPos - startPos
+    local totalDist = delta.Magnitude
+
+    if totalDist <= stepSize then
+        pcall(function() hrp.CFrame = CFrame.new(targetPos) end)
+        return true
+    end
+
+    local steps = math.ceil(totalDist / stepSize)
+    local dir = delta.Unit
+
+    for i = 1, steps do
+        local stepDist = math.min(stepSize * i, totalDist)
+        local nextPos = startPos + dir * stepDist
+        pcall(function()
+            hrp.CFrame = CFrame.new(nextPos)
+        end)
+        task.wait(delay)
+    end
+
+    pcall(function() hrp.CFrame = CFrame.new(targetPos) end)
+    return true
+end
+
+Features.tpStepByStep = tpStepByStep
 
 -- ============================================================
 -- SPEED
@@ -103,7 +140,7 @@ local function isTierEnabled(tier)
 end
 
 -- ============================================================
--- PLOT & HATCHRACK
+-- PLOT
 -- ============================================================
 local function getMyPlot()
     for i = 1, 10 do
@@ -127,14 +164,16 @@ Features.returnToPlot = function()
     local hrp = getHRP()
     if not hrp then return false end
     local pos = getPlotPosition()
-    if pos then
-        hrp.CFrame = CFrame.new(pos + Vector3.new(0, 5, 0))
-        return true
-    end
-    return false
+    if not pos then return false end
+
+    local targetPos = pos + Vector3.new(0, 5, 0)
+    tpStepByStep(hrp, targetPos)
+    return true
 end
 
--- Cek apakah karakter lagi bawa egg (Tool "Common Egg" dll)
+-- ============================================================
+-- HATCHRACK
+-- ============================================================
 local function isHoldingEgg()
     local char = LP.Character
     if not char then return false end
@@ -149,7 +188,6 @@ local function isHoldingEgg()
     return false, nil
 end
 
--- Cari prompt DepositSeaEgg di slot kosong
 local function findEmptyHatchPrompt()
     local plot = getMyPlot()
     if not plot then return nil end
@@ -161,7 +199,6 @@ local function findEmptyHatchPrompt()
            and prompt.Name == "DepositSeaEgg"
            and prompt.Enabled
         then
-            -- Cek apakah slot kosong (ga ada model egg di dalam Box Telur)
             local eggInteract = prompt.Parent
             local slotBox = eggInteract and eggInteract.Parent
             if slotBox then
@@ -181,7 +218,6 @@ local function findEmptyHatchPrompt()
     return nil
 end
 
--- Get BasePart dari prompt buat TP
 local function getPromptPart(prompt)
     local p = prompt.Parent
     while p and not p:IsA("BasePart") do
@@ -190,13 +226,11 @@ local function getPromptPart(prompt)
     return p
 end
 
--- Deposit egg ke HatchRack
 Features.depositEgg = function()
     local hrp = getHRP()
     if not hrp then return false, "no hrp" end
 
-    -- Cek bener-bener bawa egg
-    local holding, tool = isHoldingEgg()
+    local holding = isHoldingEgg()
     if not holding then return false, "not holding egg" end
 
     local prompt = findEmptyHatchPrompt()
@@ -205,7 +239,9 @@ Features.depositEgg = function()
     local part = getPromptPart(prompt)
     if not part then return false, "no prompt part" end
 
-    hrp.CFrame = CFrame.new(part.Position + Vector3.new(0, 3, 0))
+    -- TP step by step ke slot
+    local targetPos = part.Position + Vector3.new(0, 3, 0)
+    tpStepByStep(hrp, targetPos)
     task.wait(0.15)
 
     pcall(function()
@@ -222,7 +258,7 @@ Features.depositEgg = function()
 end
 
 -- ============================================================
--- STEAL 1 EGG
+-- STEAL
 -- ============================================================
 local function stealEgg(egg, hrp)
     if not egg or not egg.Parent then return false end
@@ -231,8 +267,10 @@ local function stealEgg(egg, hrp)
     local prompt = eggRoot:FindFirstChild("TakeSeaEgg")
     if not prompt then return false end
 
-    hrp.CFrame = CFrame.new(eggRoot.Position + Vector3.new(0, 3, 0))
-    task.wait(0.08)
+    -- TP step by step ke egg
+    local targetPos = eggRoot.Position + Vector3.new(0, 3, 0)
+    tpStepByStep(hrp, targetPos)
+    task.wait(0.1)
 
     pcall(function()
         if fireproximityprompt then
@@ -256,7 +294,7 @@ task.spawn(function()
         local hrp = getHRP()
         if not hrp then continue end
 
-        -- STEP 1: Cari egg target
+        -- Cari egg target
         local eggs = getWildEggs()
         local target = nil
         local closestDist = math.huge
@@ -278,16 +316,15 @@ task.spawn(function()
             continue
         end
 
-        -- STEP 2: Steal egg
+        -- Steal
         stealEgg(target, hrp)
         task.wait(State.AutoSteal_Delay)
 
-        -- STEP 3: Return ke plot
+        -- Return + Deposit
         if State.AutoReturn_Enabled and State.AutoReturn_AfterSteal then
             Features.returnToPlot()
-            task.wait(0.4)
+            task.wait(0.3)
 
-            -- STEP 4: Deposit ke HatchRack
             if State.AutoDeposit_Enabled then
                 Features.depositEgg()
                 task.wait(0.5)
@@ -299,29 +336,12 @@ end)
 -- ============================================================
 -- SETTERS
 -- ============================================================
-Features.setAutoStealEnabled = function(v)
-    State.AutoSteal_Enabled = v
-end
-
-Features.setAutoStealTier = function(tier, enabled)
-    State.AutoSteal_Tiers[tier] = enabled
-end
-
-Features.setAutoStealDelay = function(v)
-    State.AutoSteal_Delay = v
-end
-
-Features.setAutoReturnEnabled = function(v)
-    State.AutoReturn_Enabled = v
-end
-
-Features.setAutoReturnAfterSteal = function(v)
-    State.AutoReturn_AfterSteal = v
-end
-
-Features.setAutoDepositEnabled = function(v)
-    State.AutoDeposit_Enabled = v
-end
+Features.setAutoStealEnabled = function(v) State.AutoSteal_Enabled = v end
+Features.setAutoStealTier = function(tier, enabled) State.AutoSteal_Tiers[tier] = enabled end
+Features.setAutoStealDelay = function(v) State.AutoSteal_Delay = v end
+Features.setAutoReturnEnabled = function(v) State.AutoReturn_Enabled = v end
+Features.setAutoReturnAfterSteal = function(v) State.AutoReturn_AfterSteal = v end
+Features.setAutoDepositEnabled = function(v) State.AutoDeposit_Enabled = v end
 
 Features.getEggCountByTier = function()
     local counts = {}
@@ -333,19 +353,13 @@ Features.getEggCountByTier = function()
     return counts
 end
 
-Features.getTierOrder = function()
-    return TIER_ORDER
-end
-
-Features.getState = function()
-    return State
-end
-
+Features.getTierOrder = function() return TIER_ORDER end
+Features.getState = function() return State end
 Features.isHoldingEgg = isHoldingEgg
 Features.getMyPlot = getMyPlot
 
 print("[Features] Ride a Fish loaded ✅")
 print("[Features] WildEggs: " .. #getWildEggs())
-print("[Features] My plot: " .. tostring(getMyPlot() and getMyPlot().Name or "not found"))
+print("[Features] TP Step: " .. RETURN_STEP .. " studs")
 
 return Features
