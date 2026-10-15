@@ -58,7 +58,7 @@ local function getHum()
 end
 
 -- ============================================================
--- SMOOTH TP
+-- SMOOTH TP (STEP BY STEP)
 -- ============================================================
 local function smoothTp(hrp, targetPos, stepSize, stepTime)
     stepSize = stepSize or STEP_SIZE
@@ -232,7 +232,7 @@ local function getPromptPart(prompt)
     return p
 end
 
--- Fire prompt
+-- Fire prompt (TP instant biar cepet + fire)
 local function firePrompt(prompt)
     if not prompt then return false end
     local part = getPromptPart(prompt)
@@ -313,40 +313,54 @@ Features.getSlotStatus = function()
 end
 
 -- ============================================================
--- AUTO HATCH
+-- AUTO HATCH — LOOP SEMUA SLOT READY + GROWING
 -- ============================================================
-Features.autoHatchOnce = function()
-    -- 1. Cari slot "Ready" → hatch
-    local readySlot = findSlotByStatus("Ready")
-    if readySlot then
+local function hatchAllReady()
+    local count = 0
+    -- Loop sampe ga ada slot Ready lagi
+    for i = 1, 30 do
+        local readySlot = findSlotByStatus("Ready")
+        if not readySlot then break end
+
         local hatchPrompt = getPromptFromSlot(readySlot, "HatchEggPrompt")
-        if hatchPrompt then
-            print("[AutoHatch] 🐣 Hatching ready egg...")
-            firePrompt(hatchPrompt)
-            return true
-        end
-    end
+        if not hatchPrompt then break end
 
-    -- 2. Cari slot "Growing" → skip grow
-    local growingSlot = findSlotByStatus("Growing")
-    if growingSlot then
-        local skipPrompt = getPromptFromSlot(growingSlot, "SkipGrowPrompt")
-        if skipPrompt then
-            print("[AutoHatch] ⏩ Skipping grow...")
-            firePrompt(skipPrompt)
-            return true
-        end
+        print("[AutoHatch] 🐣 Hatching slot " .. tostring(readySlot:GetAttribute("HatchSlot")))
+        firePrompt(hatchPrompt)
+        count = count + 1
+        task.wait(0.3)
     end
-
-    return false
+    return count
 end
 
--- Background loop Auto Hatch
+local function skipAllGrowing()
+    local count = 0
+    -- Loop sampe ga ada slot Growing lagi
+    for i = 1, 30 do
+        local growingSlot = findSlotByStatus("Growing")
+        if not growingSlot then break end
+
+        local skipPrompt = getPromptFromSlot(growingSlot, "SkipGrowPrompt")
+        if not skipPrompt then break end
+
+        print("[AutoHatch] ⏩ Skip grow slot " .. tostring(growingSlot:GetAttribute("HatchSlot")))
+        firePrompt(skipPrompt)
+        count = count + 1
+        task.wait(0.3)
+    end
+    return count
+end
+
+-- Background loop Auto Hatch (tiap 2s)
 task.spawn(function()
-    while task.wait(1) do
-        if State.AutoHatch_Enabled and State.AutoSteal_Enabled then
-            Features.autoHatchOnce()
-        end
+    while task.wait(2) do
+        if not State.AutoHatch_Enabled then continue end
+
+        -- Skip semua growing dulu (biar cepet jadi Ready)
+        skipAllGrowing()
+
+        -- Hatch semua ready
+        hatchAllReady()
     end
 end)
 
@@ -364,17 +378,17 @@ Features.depositEgg = function()
 
     local emptySlot = findSlotByStatus("Empty")
     if not emptySlot then
-        print("[Deposit] ⚠️ Ga ada slot kosong — coba auto hatch dulu")
-        local hatched = Features.autoHatchOnce()
-        if hatched then
-            task.wait(1.5)
-            emptySlot = findSlotByStatus("Empty")
-        end
+        print("[Deposit] ⚠️ Ga ada slot kosong — auto hatch dulu...")
+        -- Coba hatch dulu
+        skipAllGrowing()
+        hatchAllReady()
+        task.wait(1)
+        emptySlot = findSlotByStatus("Empty")
+    end
 
-        if not emptySlot then
-            print("[Deposit] ❌ Masih ga ada slot kosong")
-            return false
-        end
+    if not emptySlot then
+        print("[Deposit] ❌ Masih ga ada slot kosong")
+        return false
     end
 
     local prompt = getPromptFromSlot(emptySlot, "DepositSeaEgg")
