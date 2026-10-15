@@ -1,6 +1,6 @@
 -- ============================================================
 -- VRILZHUB FEATURES — RIDE A FISH
--- Speed · Auto Steal · Auto Return (step by step smooth) · Auto Deposit
+-- Speed · Auto Steal · Auto Return (step by step 200 studs) · Auto Deposit
 -- ============================================================
 
 local Players = game:GetService("Players")
@@ -15,9 +15,9 @@ local TIER_ORDER = {
     "Abyss", "Trench", "Sovereign", "Celestial", "Eternal"
 }
 
--- ⭐ TP STEP SETTING
-local STEP_SIZE = 100       -- jarak per step (studs)
-local STEP_TIME = 0.15      -- waktu per step (detik)
+-- ⭐ STEP SETTING (200 studs per step)
+local STEP_SIZE = 200
+local STEP_TIME = 0.15
 
 -- ============================================================
 -- STATE
@@ -64,18 +64,31 @@ local function smoothTp(hrp, targetPos, stepSize, stepTime)
     stepSize = stepSize or STEP_SIZE
     stepTime = stepTime or STEP_TIME
 
+    if not hrp or not hrp.Parent then
+        print("[TP] ❌ HRP invalid")
+        return false
+    end
+
     local totalDist = (targetPos - hrp.Position).Magnitude
     local steps = math.ceil(totalDist / stepSize)
 
+    print("[TP] 🚶 " .. math.floor(totalDist) .. " studs | " .. steps .. " steps")
+
     for i = 1, steps do
         local h = getHRP()
-        if not h then break end
+        if not h or not h.Parent then
+            print("[TP] ❌ HRP ilang di step " .. i)
+            break
+        end
 
         local currentPos = h.Position
         local delta = targetPos - currentPos
         local dist = delta.Magnitude
 
-        if dist < 5 then break end
+        if dist < 5 then
+            print("[TP] ✅ Sampe di step " .. i)
+            break
+        end
 
         local stepDist = math.min(stepSize, dist)
         local nextPos = currentPos + delta.Unit * stepDist
@@ -170,7 +183,9 @@ local function getPlotPosition()
     return nil
 end
 
--- ⭐ RETURN STEP BY STEP (SMOOTH)
+-- ============================================================
+-- RETURN STEP BY STEP
+-- ============================================================
 Features.returnToPlot = function()
     local hrp = getHRP()
     if not hrp then
@@ -180,21 +195,14 @@ Features.returnToPlot = function()
 
     local pos = getPlotPosition()
     if not pos then
-        print("[Return] ❌ No plot position")
+        print("[Return] ❌ No plot")
         return false
     end
 
     local target = pos + Vector3.new(0, 5, 0)
-    local totalDist = (target - hrp.Position).Magnitude
-    local steps = math.ceil(totalDist / STEP_SIZE)
-
-    print("[Return] 🏠 Return step-by-step")
-    print("[Return]   Distance: " .. math.floor(totalDist) .. " studs")
-    print("[Return]   Steps: " .. steps)
-
+    print("[Return] 🏠 Returning...")
     smoothTp(hrp, target)
-
-    print("[Return] ✅ Sampe plot")
+    print("[Return] ✅ Done")
     return true
 end
 
@@ -228,7 +236,7 @@ local function isHoldingEgg()
 end
 
 -- ============================================================
--- HATCHRACK / DEPOSIT
+-- HATCHRACK
 -- ============================================================
 local function findEmptyHatchPrompt()
     local plot = getMyPlot()
@@ -283,11 +291,10 @@ Features.depositEgg = function()
     local part = getPromptPart(prompt)
     if not part then return false end
 
-    -- ⭐ TP SMOOTH ke slot
-    smoothTp(hrp, part.Position + Vector3.new(0, 3, 0), 80, 0.12)
+    -- TP smooth ke slot
+    smoothTp(hrp, part.Position + Vector3.new(0, 3, 0))
     task.wait(0.15)
 
-    -- Fire prompt
     local holdTime = (prompt.HoldDuration > 0) and prompt.HoldDuration or 0.3
     if fireproximityprompt then
         pcall(function() fireproximityprompt(prompt) end)
@@ -315,11 +322,10 @@ local function stealEgg(egg, hrp)
     local prompt = eggRoot:FindFirstChild("TakeSeaEgg")
     if not prompt then return false end
 
-    -- ⭐ TP SMOOTH ke egg
-    smoothTp(hrp, eggRoot.Position + Vector3.new(0, 3, 0), 150, 0.08)
+    -- ⭐ TP SMOOTH ke egg (step by step, bukan instant)
+    smoothTp(hrp, eggRoot.Position + Vector3.new(0, 3, 0))
     task.wait(0.15)
 
-    -- Fire prompt
     local holdTime = (prompt.HoldDuration > 0) and prompt.HoldDuration or 0.3
     if fireproximityprompt then
         pcall(function() fireproximityprompt(prompt) end)
@@ -335,7 +341,7 @@ local function stealEgg(egg, hrp)
 end
 
 -- ============================================================
--- MAIN LOOP — LOCK + LINEAR
+-- MAIN LOOP
 -- ============================================================
 task.spawn(function()
     while true do
@@ -358,7 +364,7 @@ task.spawn(function()
             local hrp = getHRP()
             if not hrp then return end
 
-            -- STEP 1: Cari egg target
+            -- STEP 1: Cari egg
             local eggs = getWildEggs()
             local target = nil
             local closestDist = math.huge
@@ -380,15 +386,14 @@ task.spawn(function()
                 return
             end
 
-            -- STEP 2: STEAL
+            -- STEP 2: STEAL (TP smooth ke egg)
             print("[AutoFarm] 🥚 Stealing: " .. target.Name)
             stealEgg(target, hrp)
 
-            -- Tunggu egg masuk (max 3s)
             local waitStart = tick()
             while tick() - waitStart < 3 do
                 if isHoldingEgg() then
-                    print("[AutoFarm] ✅ Egg picked up")
+                    print("[AutoFarm] ✅ Picked up")
                     break
                 end
                 task.wait(0.1)
@@ -396,7 +401,7 @@ task.spawn(function()
 
             task.wait(0.3)
 
-            -- STEP 3: RETURN STEP BY STEP
+            -- STEP 3: RETURN (TP smooth step by step)
             if State.AutoReturn_Enabled and State.AutoReturn_AfterSteal then
                 print("[AutoFarm] 🏠 Returning...")
                 Features.returnToPlot()
