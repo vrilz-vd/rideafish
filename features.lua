@@ -1,6 +1,6 @@
 -- ============================================================
 -- VRILZHUB FEATURES — RIDE A FISH
--- Speed · Auto Steal · Auto Return (step by step) · Auto Deposit
+-- Speed · Auto Steal (hold prompt) · Auto Return (step by step) · Auto Deposit
 -- ============================================================
 
 local Players = game:GetService("Players")
@@ -14,9 +14,9 @@ local TIER_ORDER = {
     "Abyss", "Trench", "Sovereign", "Celestial", "Eternal"
 }
 
--- ⭐ SETTING TP STEP
-local RETURN_STEP = 200       -- jarak per TP (studs)
-local RETURN_DELAY = 0.05     -- delay antar step
+-- ⭐ SETTING TP STEP (bisa lu adjust)
+local RETURN_STEP = 100       -- jarak per TP (studs)
+local RETURN_DELAY = 0.08     -- delay antar step (makin besar = makin keliatan smooth)
 
 -- ============================================================
 -- STATE
@@ -24,14 +24,12 @@ local RETURN_DELAY = 0.05     -- delay antar step
 local State = {
     Speed_Enabled = false,
     Speed_Value = 40,
-
     AutoSteal_Enabled = false,
     AutoSteal_Delay = 0.4,
     AutoSteal_Tiers = {
         Common = false, Coral = false, Reef = false, Tidal = false, Deep = false,
         Abyss = false, Trench = true, Sovereign = true, Celestial = true, Eternal = true,
     },
-
     AutoReturn_Enabled = true,
     AutoReturn_AfterSteal = true,
     AutoDeposit_Enabled = true,
@@ -165,9 +163,7 @@ Features.returnToPlot = function()
     if not hrp then return false end
     local pos = getPlotPosition()
     if not pos then return false end
-
-    local targetPos = pos + Vector3.new(0, 5, 0)
-    tpStepByStep(hrp, targetPos)
+    tpStepByStep(hrp, pos + Vector3.new(0, 5, 0))
     return true
 end
 
@@ -176,11 +172,17 @@ end
 -- ============================================================
 local function isHoldingEgg()
     local char = LP.Character
-    if not char then return false end
-    for _, tool in ipairs(char:GetChildren()) do
-        if tool:IsA("Tool") then
-            local nameLower = tool.Name:lower()
-            if nameLower:find("egg") and not nameLower:find("milkfish") then
+    if char then
+        for _, tool in ipairs(char:GetChildren()) do
+            if tool:IsA("Tool") and tool.Name:lower():find("egg") and not tool.Name:lower():find("milkfish") then
+                return true, tool
+            end
+        end
+    end
+    local backpack = LP:FindFirstChild("Backpack")
+    if backpack then
+        for _, tool in ipairs(backpack:GetChildren()) do
+            if tool:IsA("Tool") and tool.Name:lower():find("egg") and not tool.Name:lower():find("milkfish") then
                 return true, tool
             end
         end
@@ -195,10 +197,7 @@ local function findEmptyHatchPrompt()
     if not rack then return nil end
 
     for _, prompt in ipairs(rack:GetDescendants()) do
-        if prompt:IsA("ProximityPrompt")
-           and prompt.Name == "DepositSeaEgg"
-           and prompt.Enabled
-        then
+        if prompt:IsA("ProximityPrompt") and prompt.Name == "DepositSeaEgg" and prompt.Enabled then
             local eggInteract = prompt.Parent
             local slotBox = eggInteract and eggInteract.Parent
             if slotBox then
@@ -240,25 +239,28 @@ Features.depositEgg = function()
     if not part then return false, "no prompt part" end
 
     -- TP step by step ke slot
-    local targetPos = part.Position + Vector3.new(0, 3, 0)
-    tpStepByStep(hrp, targetPos)
+    tpStepByStep(hrp, part.Position + Vector3.new(0, 3, 0))
     task.wait(0.15)
 
-    pcall(function()
-        if fireproximityprompt then
-            fireproximityprompt(prompt)
-        else
+    -- Fire prompt dengan hold time
+    local holdTime = (prompt.HoldDuration > 0) and prompt.HoldDuration or 0.3
+    if fireproximityprompt then
+        pcall(function() fireproximityprompt(prompt) end)
+        task.wait(holdTime + 0.15)
+    else
+        pcall(function()
             prompt:InputHoldBegin()
-            task.wait(0.35)
+            task.wait(holdTime + 0.1)
             prompt:InputHoldEnd()
-        end
-    end)
+        end)
+        task.wait(0.15)
+    end
 
     return true, "deposited"
 end
 
 -- ============================================================
--- STEAL
+-- STEAL (with proper hold)
 -- ============================================================
 local function stealEgg(egg, hrp)
     if not egg or not egg.Parent then return false end
@@ -267,21 +269,54 @@ local function stealEgg(egg, hrp)
     local prompt = eggRoot:FindFirstChild("TakeSeaEgg")
     if not prompt then return false end
 
-    -- TP step by step ke egg
-    local targetPos = eggRoot.Position + Vector3.new(0, 3, 0)
-    tpStepByStep(hrp, targetPos)
-    task.wait(0.1)
-
+    -- TP INSTANT ke egg (approach cepet)
     pcall(function()
-        if fireproximityprompt then
-            fireproximityprompt(prompt)
-        else
-            prompt:InputHoldBegin()
-            task.wait(0.35)
-            prompt:InputHoldEnd()
-        end
+        hrp.CFrame = CFrame.new(eggRoot.Position + Vector3.new(0, 3, 0))
     end)
-    return true
+    task.wait(0.15)
+
+    -- Fire prompt dengan HOLD yang bener
+    local holdTime = (prompt.HoldDuration > 0) and prompt.HoldDuration or 0.3
+
+    if fireproximityprompt then
+        pcall(function() fireproximityprompt(prompt) end)
+        task.wait(holdTime + 0.2)
+    else
+        pcall(function()
+            prompt:InputHoldBegin()
+            task.wait(holdTime + 0.15)
+            prompt:InputHoldEnd()
+        end)
+        task.wait(0.2)
+    end
+
+    -- Tunggu sampe egg beneran masuk (max 1.5s)
+    local startTime = tick()
+    while tick() - startTime < 1.5 do
+        local holding = false
+        local char = LP.Character
+        if char then
+            for _, tool in ipairs(char:GetChildren()) do
+                if tool:IsA("Tool") and tool.Name:lower():find("egg") and not tool.Name:lower():find("milkfish") then
+                    holding = true
+                    break
+                end
+            end
+        end
+        local backpack = LP:FindFirstChild("Backpack")
+        if not holding and backpack then
+            for _, tool in ipairs(backpack:GetChildren()) do
+                if tool:IsA("Tool") and tool.Name:lower():find("egg") and not tool.Name:lower():find("milkfish") then
+                    holding = true
+                    break
+                end
+            end
+        end
+        if holding then return true end
+        task.wait(0.1)
+    end
+
+    return false
 end
 
 -- ============================================================
@@ -316,15 +351,21 @@ task.spawn(function()
             continue
         end
 
-        -- Steal
-        stealEgg(target, hrp)
-        task.wait(State.AutoSteal_Delay)
+        -- Steal (tunggu sampe egg beneran masuk)
+        local ok = stealEgg(target, hrp)
+        if not ok then
+            task.wait(0.3)
+            continue
+        end
 
-        -- Return + Deposit
+        task.wait(0.2)
+
+        -- Return
         if State.AutoReturn_Enabled and State.AutoReturn_AfterSteal then
             Features.returnToPlot()
             task.wait(0.3)
 
+            -- Deposit
             if State.AutoDeposit_Enabled then
                 Features.depositEgg()
                 task.wait(0.5)
@@ -360,6 +401,6 @@ Features.getMyPlot = getMyPlot
 
 print("[Features] Ride a Fish loaded ✅")
 print("[Features] WildEggs: " .. #getWildEggs())
-print("[Features] TP Step: " .. RETURN_STEP .. " studs")
+print("[Features] TP Step: " .. RETURN_STEP .. " studs | Delay: " .. RETURN_DELAY .. "s")
 
 return Features
