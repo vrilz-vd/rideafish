@@ -2138,49 +2138,7 @@ local function buildMainWindow(parent)
             end
         end
     end)
-
-    -- ═══════════════════════════════════════════
-    -- AUTO RETURN CARD
-    -- ═══════════════════════════════════════════
-    local returnCard, returnContent = makeCard(farmPage, "🏠 AUTO RETURN", 3)
-
-    makeToggle(returnContent, "Auto Return to Plot", false, function(v)
-        Shared.AutoReturn_Enabled = v
-        local F = _G.VRILZ_Features
-        if F and F.setAutoReturnEnabled then F.setAutoReturnEnabled(v) end
-        if v then notify("🏠 Auto Return: ON", "success")
-        else notify("🏠 Auto Return: OFF", "info") end
-    end)
-
-    -- Manual return button
-    local returnNowBtn = Instance.new("TextButton")
-    returnNowBtn.Size = UDim2.new(1, 0, 0, 34)
-    returnNowBtn.BackgroundColor3 = C.Accent
-    returnNowBtn.Text = "🏠 RETURN NOW"
-    returnNowBtn.TextColor3 = Color3.new(1, 1, 1)
-    returnNowBtn.Font = Enum.Font.GothamBold
-    returnNowBtn.TextSize = CFG.FONT_LABEL
-    returnNowBtn.AutoButtonColor = false
-    returnNowBtn.LayoutOrder = 3
-    returnNowBtn.ZIndex = 3
-    returnNowBtn.Parent = returnContent
-    registerTheme(returnNowBtn, "Accent", "BackgroundColor3")
-
-    local rnCorner = Instance.new("UICorner")
-    rnCorner.CornerRadius = UDim.new(0, 8)
-    rnCorner.Parent = returnNowBtn
-
-    returnNowBtn.MouseButton1Click:Connect(function()
-        local F = _G.VRILZ_Features
-        if F and F.returnToPlot then
-            if F.returnToPlot() then
-                notify("🏠 Returned to plot!", "success")
-            else
-                notify("❌ Plot not found", "error")
-            end
-        end
-    end)
-
+  
     -- ============================================================
     -- TAB PLOT (HatchRack Status + Auto Hatch + Auto Deposit)
     -- ============================================================
@@ -2241,7 +2199,7 @@ local function buildMainWindow(parent)
     -- ═══════════════════════════════════════════
     local hatchCard, hatchContent = makeCard(plotPage, "🐣 AUTO HATCH", 2)
 
-    makeToggle(hatchContent, "Auto Hatch Egg", true, function(v)
+    makeToggle(hatchContent, "Auto Hatch Egg", false, function(v)
         Shared.AutoHatch_Enabled = v
         local F = _G.VRILZ_Features
         if F and F.setAutoHatchEnabled then F.setAutoHatchEnabled(v) end
@@ -2269,7 +2227,7 @@ local function buildMainWindow(parent)
     -- ═══════════════════════════════════════════
     local depositCard, depositContent = makeCard(plotPage, "📦 AUTO DEPOSIT", 3)
 
-    makeToggle(depositContent, "Auto Deposit Egg", true, function(v)
+    makeToggle(depositContent, "Auto Deposit Egg", false, function(v)
         Shared.AutoDeposit_Enabled = v
         local F = _G.VRILZ_Features
         if F and F.setAutoDepositEnabled then F.setAutoDepositEnabled(v) end
@@ -2297,7 +2255,7 @@ local function buildMainWindow(parent)
     -- ═══════════════════════════════════════════
     local returnCard, returnContent = makeCard(plotPage, "🏠 AUTO RETURN", 4)
 
-    makeToggle(returnContent, "Return After Each Steal", true, function(v)
+      makeToggle(returnContent, "Return After Each Steal", false, function(v)
         Shared.AutoReturn_AfterSteal = v
         local F = _G.VRILZ_Features
         if F and F.setAutoReturnAfterSteal then F.setAutoReturnAfterSteal(v) end
@@ -2305,14 +2263,14 @@ local function buildMainWindow(parent)
         else notify("🏠 Return After Steal: OFF", "info") end
     end)
 
-    makeToggle(returnContent, "Enable Auto Return", true, function(v)
+    makeToggle(returnContent, "Enable Auto Return", false, function(v)
         Shared.AutoReturn_Enabled = v
         local F = _G.VRILZ_Features
         if F and F.setAutoReturnEnabled then F.setAutoReturnEnabled(v) end
         if v then notify("🏠 Auto Return: ON", "success")
         else notify("🏠 Auto Return: OFF", "info") end
     end)
-
+    
     local returnNote = Instance.new("TextLabel")
     returnNote.Size = UDim2.new(1, 0, 0, 30)
     returnNote.BackgroundTransparency = 1
