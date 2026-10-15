@@ -1,6 +1,6 @@
 -- ============================================================
 -- VRILZHUB FEATURES — RIDE A FISH
--- Speed · Auto Steal (by Tier) · Auto Return
+-- Speed · Auto Steal (by Tier) · Auto Return (after steal)
 -- ============================================================
 
 local Players = game:GetService("Players")
@@ -30,6 +30,7 @@ local TIER_LUCK = {
 local State = {
     Speed_Enabled = false,
     Speed_Value = 40,
+
     AutoSteal_Enabled = false,
     AutoSteal_Delay = 0.4,
     AutoSteal_Tiers = {
@@ -44,8 +45,10 @@ local State = {
         Celestial = true,
         Eternal = true,
     },
-    AutoReturn_Enabled = false,
-    AutoReturn_Interval = 30,
+
+    AutoReturn_Enabled = true,          -- ⭐ return aktif
+    AutoReturn_AfterSteal = true,       -- ⭐ return SETELAH STEAL (bukan timer)
+    AutoReturn_Interval = 30,           -- fallback timer (kalau AfterSteal OFF)
     AutoReturn_Mode = "Plot",
 }
 
@@ -123,103 +126,12 @@ local function getEggLuck(egg)
     return egg:GetAttribute("EggLuck") or 0
 end
 
--- Cek apakah tier egg aktif di filter
 local function isTierEnabled(tier)
     return State.AutoSteal_Tiers[tier] == true
 end
 
--- Ambil 1 egg
-local function stealEgg(egg, hrp)
-    if not egg or not egg.Parent then return false end
-    local eggRoot = egg:FindFirstChild("EggRoot")
-    if not eggRoot then return false end
-    local prompt = eggRoot:FindFirstChild("TakeSeaEgg")
-    if not prompt then return false end
-
-    -- TP
-    hrp.CFrame = CFrame.new(eggRoot.Position + Vector3.new(0, 3, 0))
-    task.wait(0.08)
-
-    -- Fire prompt
-    pcall(function()
-        if fireproximityprompt then
-            fireproximityprompt(prompt)
-        else
-            prompt:InputHoldBegin()
-            task.wait(0.35)
-            prompt:InputHoldEnd()
-        end
-    end)
-    return true
-end
-
--- Loop Auto Steal
-task.spawn(function()
-    while task.wait(0.1) do
-        if not State.AutoSteal_Enabled then continue end
-
-        local hrp = getHRP()
-        if not hrp then continue end
-
-        local eggs = getWildEggs()
-        if #eggs == 0 then continue end
-
-        -- Cari egg yang tiernya enabled + terdekat
-        local target = nil
-        local closestDist = math.huge
-
-        for _, egg in ipairs(eggs) do
-            local tier = getEggTier(egg)
-            if not isTierEnabled(tier) then continue end
-
-            local eggRoot = egg:FindFirstChild("EggRoot")
-            if not eggRoot then continue end
-
-            local dist = (eggRoot.Position - hrp.Position).Magnitude
-            if dist < closestDist then
-                closestDist = dist
-                target = egg
-            end
-        end
-
-        if target then
-            stealEgg(target, hrp)
-            task.wait(State.AutoSteal_Delay)
-        else
-            task.wait(0.3)
-        end
-    end
-end)
-
-Features.setAutoStealEnabled = function(v)
-    State.AutoSteal_Enabled = v
-end
-
-Features.setAutoStealTier = function(tier, enabled)
-    State.AutoSteal_Tiers[tier] = enabled
-end
-
-Features.setAutoStealDelay = function(v)
-    State.AutoSteal_Delay = v
-end
-
--- Hitung egg per tier (buat UI counter)
-Features.getEggCountByTier = function()
-    local counts = {}
-    for _, tier in ipairs(TIER_ORDER) do counts[tier] = 0 end
-    for _, egg in ipairs(getWildEggs()) do
-        local t = getEggTier(egg)
-        counts[t] = (counts[t] or 0) + 1
-    end
-    return counts
-end
-
-Features.getTierOrder = function()
-    return TIER_ORDER
-end
-
 -- ============================================================
--- 3. AUTO RETURN
+-- 3. AUTO RETURN (fungsi)
 -- ============================================================
 local function getMyPlot()
     local myId = LP.UserId
@@ -237,7 +149,6 @@ local function getPlotPosition()
     if plot then
         return plot:GetPivot().Position
     end
-    -- Fallback: homepoint
     local hp = workspace:FindFirstChild("HomepointMarker")
     if hp then
         return hp:GetPivot().Position
@@ -256,19 +167,89 @@ Features.returnToPlot = function()
     return false
 end
 
-Features.setAutoReturnEnabled = function(v)
-    State.AutoReturn_Enabled = v
+-- ============================================================
+-- 4. STEAL 1 EGG
+-- ============================================================
+local function stealEgg(egg, hrp)
+    if not egg or not egg.Parent then return false end
+    local eggRoot = egg:FindFirstChild("EggRoot")
+    if not eggRoot then return false end
+    local prompt = eggRoot:FindFirstChild("TakeSeaEgg")
+    if not prompt then return false end
+
+    hrp.CFrame = CFrame.new(eggRoot.Position + Vector3.new(0, 3, 0))
+    task.wait(0.08)
+
+    pcall(function()
+        if fireproximityprompt then
+            fireproximityprompt(prompt)
+        else
+            prompt:InputHoldBegin()
+            task.wait(0.35)
+            prompt:InputHoldEnd()
+        end
+    end)
+    return true
 end
 
-Features.setAutoReturnInterval = function(v)
-    State.AutoReturn_Interval = v
-end
-
--- Loop Auto Return
+-- ============================================================
+-- 5. MAIN LOOP — STEAL → RETURN → STEAL → RETURN...
+-- ============================================================
 task.spawn(function()
-    local lastReturn = 0
+    while task.wait(0.1) do
+        if not State.AutoSteal_Enabled then continue end
+
+        local hrp = getHRP()
+        if not hrp then continue end
+
+        -- Cari egg target (terdekat + tier enabled)
+        local eggs = getWildEggs()
+        local target = nil
+        local closestDist = math.huge
+
+        for _, egg in ipairs(eggs) do
+            local tier = getEggTier(egg)
+            if not isTierEnabled(tier) then continue end
+
+            local eggRoot = egg:FindFirstChild("EggRoot")
+            if not eggRoot then continue end
+
+            local dist = (eggRoot.Position - hrp.Position).Magnitude
+            if dist < closestDist then
+                closestDist = dist
+                target = egg
+            end
+        end
+
+        -- Kalau ada target, steal
+        if target then
+            stealEgg(target, hrp)
+            task.wait(State.AutoSteal_Delay)
+
+            -- ⭐ RETURN SETELAH STEAL
+            if State.AutoReturn_Enabled and State.AutoReturn_AfterSteal then
+                Features.returnToPlot()
+                task.wait(0.5)   -- kasih waktu buat landing
+            end
+        else
+            -- Ga ada egg yang match filter → tunggu bentar
+            task.wait(0.5)
+        end
+    end
+end)
+
+-- ============================================================
+-- 6. TIMER RETURN (fallback, cuma kalau AfterSteal OFF)
+-- ============================================================
+task.spawn(function()
+    local lastReturn = tick()
     while task.wait(1) do
         if not State.AutoReturn_Enabled then
+            lastReturn = tick()
+            continue
+        end
+        if State.AutoReturn_AfterSteal then
+            -- skip, karena udah di-handle di main loop
             lastReturn = tick()
             continue
         end
@@ -278,6 +259,48 @@ task.spawn(function()
         end
     end
 end)
+
+-- ============================================================
+-- SETTERS (dipanggil dari UI)
+-- ============================================================
+Features.setAutoStealEnabled = function(v)
+    State.AutoSteal_Enabled = v
+end
+
+Features.setAutoStealTier = function(tier, enabled)
+    State.AutoSteal_Tiers[tier] = enabled
+end
+
+Features.setAutoStealDelay = function(v)
+    State.AutoSteal_Delay = v
+end
+
+Features.setAutoReturnEnabled = function(v)
+    State.AutoReturn_Enabled = v
+end
+
+Features.setAutoReturnAfterSteal = function(v)
+    State.AutoReturn_AfterSteal = v
+end
+
+Features.setAutoReturnInterval = function(v)
+    State.AutoReturn_Interval = v
+end
+
+-- Hitung egg per tier (buat UI counter)
+Features.getEggCountByTier = function()
+    local counts = {}
+    for _, tier in ipairs(TIER_ORDER) do counts[tier] = 0 end
+    for _, egg in ipairs(getWildEggs()) do
+        local t = getEggTier(egg)
+        counts[t] = (counts[t] or 0) + 1
+    end
+    return counts
+end
+
+Features.getTierOrder = function()
+    return TIER_ORDER
+end
 
 Features.getState = function()
     return State
