@@ -1,5 +1,5 @@
 -- ============================================================
--- VRILZHUB FEATURES — RIDE A FISH
+-- VRILZHUB FEATURES — RIDE A FISH (FIXED)
 -- Speed · Auto Steal · Auto Return · Auto Deposit · Auto Hatch
 -- ============================================================
 
@@ -13,6 +13,12 @@ _G.VRILZ_Features = Features
 local TIER_ORDER = {
     "Common", "Coral", "Reef", "Tidal", "Deep",
     "Abyss", "Trench", "Sovereign", "Celestial", "Eternal"
+}
+
+-- Prioritas tier (1 = paling tinggi, 99 = fallback)
+local TIER_PRIORITY = {
+    Eternal = 1, Celestial = 2, Sovereign = 3, Trench = 4, Abyss = 5,
+    Deep = 6, Tidal = 7, Reef = 8, Coral = 9, Common = 10,
 }
 
 local STEP_SIZE = 200
@@ -34,31 +40,51 @@ local State = {
     AutoReturn_AfterSteal = true,
     AutoDeposit_Enabled = true,
     AutoHatch_Enabled = true,
+    -- Debug mode (print verbose)
+    Debug = true,
 }
 
 local isBusy = false
+
+-- ============================================================
+-- LOGGER
+-- ============================================================
+local function log(...)
+    if State.Debug then
+        print("[VRILZ]", ...)
+    end
+end
 
 -- ============================================================
 -- HELPER
 -- ============================================================
 local function getChar()
     local char = LP.Character
-    if not char then char = LP.CharacterAdded:Wait() end
+    if not char then
+        local ok, c = pcall(function() return LP.CharacterAdded:Wait() end)
+        if ok then char = c end
+    end
     return char
 end
 
 local function getHRP()
     local char = getChar()
-    return char:WaitForChild("HumanoidRootPart", 5)
+    if not char then return nil end
+    local ok, hrp = pcall(function() return char:WaitForChild("HumanoidRootPart", 5) end)
+    if ok then return hrp end
+    return char:FindFirstChild("HumanoidRootPart")
 end
 
 local function getHum()
     local char = getChar()
-    return char:WaitForChild("Humanoid", 5)
+    if not char then return nil end
+    local ok, hum = pcall(function() return char:WaitForChild("Humanoid", 5) end)
+    if ok then return hum end
+    return char:FindFirstChild("Humanoid")
 end
 
 -- ============================================================
--- SMOOTH TP (STEP BY STEP)
+-- SMOOTH TP (STEP BY STEP) — Anti-stuck
 -- ============================================================
 local function smoothTp(hrp, targetPos, stepSize, stepTime)
     stepSize = stepSize or STEP_SIZE
@@ -68,12 +94,14 @@ local function smoothTp(hrp, targetPos, stepSize, stepTime)
 
     local totalDist = (targetPos - hrp.Position).Magnitude
     local steps = math.ceil(totalDist / stepSize)
-
-    print("[TP] 🚶 " .. math.floor(totalDist) .. " studs | " .. steps .. " steps")
+    log("[TP] 🚶 " .. math.floor(totalDist) .. " studs | " .. steps .. " steps")
 
     for i = 1, steps do
         local h = getHRP()
-        if not h or not h.Parent then break end
+        if not h or not h.Parent then
+            log("[TP] ❌ HRP hilang di step " .. i)
+            return false
+        end
 
         local currentPos = h.Position
         local delta = targetPos - currentPos
@@ -84,13 +112,20 @@ local function smoothTp(hrp, targetPos, stepSize, stepTime)
         local stepDist = math.min(stepSize, dist)
         local nextPos = currentPos + delta.Unit * stepDist
 
-        local tween = TweenService:Create(
-            h,
-            TweenInfo.new(stepTime, Enum.EasingStyle.Linear),
-            { CFrame = CFrame.new(nextPos) }
-        )
-        tween:Play()
-        tween.Completed:Wait()
+        local ok = pcall(function()
+            local tween = TweenService:Create(
+                h,
+                TweenInfo.new(stepTime, Enum.EasingStyle.Linear),
+                { CFrame = CFrame.new(nextPos) }
+            )
+            tween:Play()
+            tween.Completed:Wait()
+        end)
+
+        if not ok then
+            log("[TP] ⚠️ Tween error di step " .. i)
+            return false
+        end
     end
 
     return true
@@ -139,8 +174,20 @@ local function getWildEggs()
     return wildEggs:GetChildren()
 end
 
+-- Auto-detect nama attribute tier (beberapa kemungkinan)
+local TIER_ATTR_NAMES = { "EggTier", "Tier", "Rarity", "EggRarity", "TierName" }
+
 local function getEggTier(egg)
-    return egg:GetAttribute("EggTier") or "Unknown"
+    if not egg or not egg.Parent then return "Unknown" end
+    for _, attrName in ipairs(TIER_ATTR_NAMES) do
+        local ok, val = pcall(function() return egg:GetAttribute(attrName) end)
+        if ok and type(val) == "string" and val ~= "" then
+            -- Normalize case: "eternal" → "Eternal"
+            local normalized = val:sub(1,1):upper() .. val:sub(2):lower()
+            return normalized
+        end
+    end
+    return "Unknown"
 end
 
 local function isTierEnabled(tier)
@@ -177,48 +224,94 @@ local function isHoldingEgg()
 end
 
 -- ============================================================
--- PLOT
+-- PLOT — Robust detection
 -- ============================================================
 local function getMyPlot()
-    for i = 1, 10 do
+    -- Strategi 1: nama standar "Player Pot X"
+    for i = 1, 20 do
         local pot = workspace:FindFirstChild("Player Pot " .. i)
-        if pot and pot:GetAttribute("OwnerUserId") == LP.UserId then
-            return pot
+        if pot then
+            local ok, owner = pcall(function() return pot:GetAttribute("OwnerUserId") end)
+            if ok and owner == LP.UserId then
+                return pot
+            end
         end
     end
+
+    -- Strategi 2: scan semua Model/BasePart yang punya attribute OwnerUserId
+    for _, obj in ipairs(workspace:GetChildren()) do
+        if obj:IsA("Model") or obj:IsA("BasePart") or obj:IsA("Folder") then
+            local ok, owner = pcall(function() return obj:GetAttribute("OwnerUserId") end)
+            if ok and owner == LP.UserId then
+                -- Pastikan ini plot (bukan misc)
+                local nameLower = obj.Name:lower()
+                if nameLower:find("pot") or nameLower:find("plot") or nameLower:find("base") then
+                    return obj
+                end
+            end
+        end
+    end
+
     return nil
 end
 
 local function getPlotPosition()
     local plot = getMyPlot()
     if plot then
+        -- Coba pivot
         local ok, pivot = pcall(function() return plot:GetPivot() end)
-        if ok and pivot then return pivot.Position end
+        if ok and pivot and pivot.Position.Magnitude > 0 then
+            return pivot.Position
+        end
+
+        -- Fallback: cari PrimaryPart
+        if plot.PrimaryPart then
+            return plot.PrimaryPart.Position
+        end
+
+        -- Fallback: cari BasePart pertama
+        for _, part in ipairs(plot:GetDescendants()) do
+            if part:IsA("BasePart") then
+                return part.Position
+            end
+        end
     end
+
+    -- Fallback: HomepointMarker
     local hp = workspace:FindFirstChild("HomepointMarker")
     if hp then
         local ok, pivot = pcall(function() return hp:GetPivot() end)
         if ok and pivot then return pivot.Position end
+        if hp:IsA("BasePart") then return hp.Position end
     end
+
     return nil
 end
 
 Features.returnToPlot = function()
     local hrp = getHRP()
     if not hrp then
-        print("[Return] ❌ No HRP")
-        return false
-    end
-    local pos = getPlotPosition()
-    if not pos then
-        print("[Return] ❌ No plot position")
+        warn("[Return] ❌ No HRP")
         return false
     end
 
-    print("[Return] 🏠 Returning step-by-step...")
-    smoothTp(hrp, pos + Vector3.new(0, 5, 0))
-    print("[Return] ✅ Done")
-    return true
+    local plot = getMyPlot()
+    log("[Return] Plot:", plot and plot:GetFullName() or "NIL")
+
+    local pos = getPlotPosition()
+    log("[Return] Target pos:", tostring(pos))
+
+    if not pos then
+        warn("[Return] ❌ No plot position — cek nama plot / attribute OwnerUserId")
+        return false
+    end
+
+    log("[Return] 🏠 Returning step-by-step...")
+    local ok = smoothTp(hrp, pos + Vector3.new(0, 5, 0))
+    if ok then
+        log("[Return] ✅ Done")
+    end
+    return ok
 end
 
 -- ============================================================
@@ -232,7 +325,6 @@ local function getPromptPart(prompt)
     return p
 end
 
--- Fire prompt (TP instant biar cepet + fire)
 local function firePrompt(prompt)
     if not prompt then return false end
     local part = getPromptPart(prompt)
@@ -262,7 +354,6 @@ local function firePrompt(prompt)
     return true
 end
 
--- Cari slot dengan status tertentu
 local function findSlotByStatus(status)
     local plot = getMyPlot()
     if not plot then return nil end
@@ -280,7 +371,6 @@ local function findSlotByStatus(status)
     return nil
 end
 
--- Cari prompt spesifik di slot
 local function getPromptFromSlot(eggInteract, promptName)
     if not eggInteract then return nil end
     for _, p in ipairs(eggInteract:GetDescendants()) do
@@ -291,7 +381,6 @@ local function getPromptFromSlot(eggInteract, promptName)
     return nil
 end
 
--- ⭐ GET SLOT STATUS (buat UI counter)
 Features.getSlotStatus = function()
     local result = { Empty = 0, Growing = 0, Ready = 0, Other = 0 }
     local plot = getMyPlot()
@@ -313,11 +402,10 @@ Features.getSlotStatus = function()
 end
 
 -- ============================================================
--- AUTO HATCH — LOOP SEMUA SLOT READY + GROWING
+-- AUTO HATCH
 -- ============================================================
 local function hatchAllReady()
     local count = 0
-    -- Loop sampe ga ada slot Ready lagi
     for i = 1, 30 do
         local readySlot = findSlotByStatus("Ready")
         if not readySlot then break end
@@ -325,7 +413,7 @@ local function hatchAllReady()
         local hatchPrompt = getPromptFromSlot(readySlot, "HatchEggPrompt")
         if not hatchPrompt then break end
 
-        print("[AutoHatch] 🐣 Hatching slot " .. tostring(readySlot:GetAttribute("HatchSlot")))
+        log("[AutoHatch] 🐣 Hatching slot " .. tostring(readySlot:GetAttribute("HatchSlot")))
         firePrompt(hatchPrompt)
         count = count + 1
         task.wait(0.3)
@@ -335,7 +423,6 @@ end
 
 local function skipAllGrowing()
     local count = 0
-    -- Loop sampe ga ada slot Growing lagi
     for i = 1, 30 do
         local growingSlot = findSlotByStatus("Growing")
         if not growingSlot then break end
@@ -343,7 +430,7 @@ local function skipAllGrowing()
         local skipPrompt = getPromptFromSlot(growingSlot, "SkipGrowPrompt")
         if not skipPrompt then break end
 
-        print("[AutoHatch] ⏩ Skip grow slot " .. tostring(growingSlot:GetAttribute("HatchSlot")))
+        log("[AutoHatch] ⏩ Skip grow slot " .. tostring(growingSlot:GetAttribute("HatchSlot")))
         firePrompt(skipPrompt)
         count = count + 1
         task.wait(0.3)
@@ -351,15 +438,10 @@ local function skipAllGrowing()
     return count
 end
 
--- Background loop Auto Hatch (tiap 2s)
 task.spawn(function()
     while task.wait(2) do
         if not State.AutoHatch_Enabled then continue end
-
-        -- Skip semua growing dulu (biar cepet jadi Ready)
         skipAllGrowing()
-
-        -- Hatch semua ready
         hatchAllReady()
     end
 end)
@@ -372,14 +454,13 @@ Features.depositEgg = function()
     if not hrp then return false end
 
     if not isHoldingEgg() then
-        print("[Deposit] ❌ Ga bawa egg")
+        log("[Deposit] ❌ Ga bawa egg")
         return false
     end
 
     local emptySlot = findSlotByStatus("Empty")
     if not emptySlot then
-        print("[Deposit] ⚠️ Ga ada slot kosong — auto hatch dulu...")
-        -- Coba hatch dulu
+        log("[Deposit] ⚠️ Ga ada slot kosong — auto hatch dulu...")
         skipAllGrowing()
         hatchAllReady()
         task.wait(1)
@@ -387,17 +468,17 @@ Features.depositEgg = function()
     end
 
     if not emptySlot then
-        print("[Deposit] ❌ Masih ga ada slot kosong")
+        log("[Deposit] ❌ Masih ga ada slot kosong")
         return false
     end
 
     local prompt = getPromptFromSlot(emptySlot, "DepositSeaEgg")
     if not prompt then
-        print("[Deposit] ❌ Prompt DepositSeaEgg ga ketemu")
+        log("[Deposit] ❌ Prompt DepositSeaEgg ga ketemu")
         return false
     end
 
-    print("[Deposit] 📦 Depositing to slot " .. tostring(emptySlot:GetAttribute("HatchSlot")))
+    log("[Deposit] 📦 Depositing to slot " .. tostring(emptySlot:GetAttribute("HatchSlot")))
     firePrompt(prompt)
     return true
 end
@@ -410,13 +491,22 @@ local function stealEgg(egg, hrp)
     local eggRoot = egg:FindFirstChild("EggRoot")
     if not eggRoot then return false end
     local prompt = eggRoot:FindFirstChild("TakeSeaEgg")
+    if not prompt then
+        -- Fallback: cari prompt apapun di EggRoot
+        for _, p in ipairs(eggRoot:GetDescendants()) do
+            if p:IsA("ProximityPrompt") then
+                prompt = p
+                break
+            end
+        end
+    end
     if not prompt then return false end
 
-    print("[Steal] 🚶 TP ke egg (" .. egg.Name .. ")")
+    log("[Steal] 🚶 TP ke egg (" .. egg.Name .. ")")
     smoothTp(hrp, eggRoot.Position + Vector3.new(0, 3, 0))
     task.wait(0.3)
 
-    print("[Steal] 🎯 Fire prompt...")
+    log("[Steal] 🎯 Fire prompt...")
     local holdTime = (prompt.HoldDuration > 0) and prompt.HoldDuration or 0.3
     if fireproximityprompt then
         pcall(function() fireproximityprompt(prompt) end)
@@ -428,18 +518,48 @@ local function stealEgg(egg, hrp)
         end)
     end
 
-    print("[Steal] ⏳ Nunggu egg masuk...")
+    log("[Steal] ⏳ Nunggu egg masuk...")
     local waitStart = tick()
     while tick() - waitStart < 3 do
         if isHoldingEgg() then
-            print("[Steal] ✅ Egg masuk!")
+            log("[Steal] ✅ Egg masuk!")
             return true
         end
         task.wait(0.1)
     end
 
-    print("[Steal] ❌ Egg ga masuk (timeout)")
+    log("[Steal] ❌ Egg ga masuk (timeout)")
     return false
+end
+
+-- ============================================================
+-- TARGET SELECTION — Prioritas Tier > Jarak
+-- ============================================================
+local function findBestTarget(hrp)
+    local eggs = getWildEggs()
+    local target = nil
+    local bestPriority = math.huge
+    local bestDist = math.huge
+
+    for _, egg in ipairs(eggs) do
+        local tier = getEggTier(egg)
+        if not isTierEnabled(tier) then continue end
+
+        local eggRoot = egg:FindFirstChild("EggRoot")
+        if not eggRoot then continue end
+
+        local priority = TIER_PRIORITY[tier] or 99
+        local dist = (eggRoot.Position - hrp.Position).Magnitude
+
+        -- Pilih tier tertinggi dulu; kalau sama, pilih terdekat
+        if priority < bestPriority or (priority == bestPriority and dist < bestDist) then
+            bestPriority = priority
+            bestDist = dist
+            target = egg
+        end
+    end
+
+    return target, bestPriority, bestDist
 end
 
 -- ============================================================
@@ -466,59 +586,46 @@ task.spawn(function()
             local hrp = getHRP()
             if not hrp then return end
 
-            -- STEP 1: Cari egg target
-            local eggs = getWildEggs()
-            local target = nil
-            local closestDist = math.huge
-
-            for _, egg in ipairs(eggs) do
-                local tier = getEggTier(egg)
-                if not isTierEnabled(tier) then continue end
-                local eggRoot = egg:FindFirstChild("EggRoot")
-                if not eggRoot then continue end
-                local dist = (eggRoot.Position - hrp.Position).Magnitude
-                if dist < closestDist then
-                    closestDist = dist
-                    target = egg
-                end
-            end
+            -- STEP 1: Cari egg target (prioritas tier tertinggi)
+            local target, prio, dist = findBestTarget(hrp)
 
             if not target then
-                print("[AutoFarm] ⚠️ Ga ada egg yang match filter")
+                log("[AutoFarm] ⚠️ Ga ada egg yang match filter")
                 task.wait(0.5)
                 return
             end
 
-            -- STEP 2: STEAL
-            print("[AutoFarm] ════════════════════")
-            print("[AutoFarm] 🥚 Target: " .. target.Name)
+            log("[AutoFarm] ════════════════════")
+            log("[AutoFarm] 🥚 Target: " .. target.Name .. " | Tier: " .. getEggTier(target)
+                .. " | Priority: " .. tostring(prio) .. " | Dist: " .. math.floor(dist))
 
+            -- STEP 2: STEAL
             local stealOk = stealEgg(target, hrp)
 
             if not stealOk then
-                print("[AutoFarm] ⚠️ Steal gagal, SKIP return + deposit")
-                print("[AutoFarm] ════════════════════")
+                log("[AutoFarm] ⚠️ Steal gagal, SKIP return + deposit")
+                log("[AutoFarm] ════════════════════")
                 return
             end
 
-            print("[AutoFarm] ✅ Steal sukses")
+            log("[AutoFarm] ✅ Steal sukses")
             task.wait(0.3)
 
             -- STEP 3: RETURN
             if State.AutoReturn_Enabled and State.AutoReturn_AfterSteal then
-                print("[AutoFarm] 🏠 Returning...")
+                log("[AutoFarm] 🏠 Returning...")
                 Features.returnToPlot()
                 task.wait(0.3)
             end
 
             -- STEP 4: DEPOSIT
             if State.AutoDeposit_Enabled and isHoldingEgg() then
-                print("[AutoFarm] 📦 Depositing...")
+                log("[AutoFarm] 📦 Depositing...")
                 Features.depositEgg()
                 task.wait(0.5)
             end
 
-            print("[AutoFarm] ════════════════════")
+            log("[AutoFarm] ════════════════════")
 
         end)
 
@@ -532,7 +639,7 @@ task.spawn(function()
 end)
 
 -- ============================================================
--- SETTERS (dipanggil dari UI)
+-- SETTERS
 -- ============================================================
 Features.setAutoStealEnabled = function(v) State.AutoSteal_Enabled = v end
 Features.setAutoStealTier = function(tier, enabled) State.AutoSteal_Tiers[tier] = enabled end
@@ -541,6 +648,7 @@ Features.setAutoReturnEnabled = function(v) State.AutoReturn_Enabled = v end
 Features.setAutoReturnAfterSteal = function(v) State.AutoReturn_AfterSteal = v end
 Features.setAutoDepositEnabled = function(v) State.AutoDeposit_Enabled = v end
 Features.setAutoHatchEnabled = function(v) State.AutoHatch_Enabled = v end
+Features.setDebug = function(v) State.Debug = v end
 
 Features.getEggCountByTier = function()
     local counts = {}
@@ -556,9 +664,38 @@ Features.getTierOrder = function() return TIER_ORDER end
 Features.getState = function() return State end
 Features.isHoldingEgg = isHoldingEgg
 Features.getMyPlot = getMyPlot
+Features.getPlotPosition = getPlotPosition
+
+-- ============================================================
+-- DEBUG DUMP — panggil manual kalau perlu
+-- ============================================================
+Features.dumpEggInfo = function()
+    local eggs = getWildEggs()
+    print("[DEBUG] Total wild eggs:", #eggs)
+    for i, egg in ipairs(eggs) do
+        if i > 10 then break end
+        print("  Egg[" .. i .. "]:", egg.Name, "| Tier:", getEggTier(egg))
+        for k, v in pairs(egg:GetAttributes()) do
+            print("     attr:", k, "=", v)
+        end
+    end
+end
+
+Features.dumpPlotInfo = function()
+    local plot = getMyPlot()
+    print("[DEBUG] My plot:", plot and plot:GetFullName() or "NIL")
+    if plot then
+        print("  Pivot:", tostring(getPlotPosition()))
+        print("  Attributes:")
+        for k, v in pairs(plot:GetAttributes()) do
+            print("     ", k, "=", v)
+        end
+    end
+end
 
 print("[Features] Ride a Fish loaded ✅")
 print("[Features] WildEggs: " .. #getWildEggs())
 print("[Features] Step: " .. STEP_SIZE .. " studs")
+print("[Features] Tier priority: Eternal > Celestial > Sovereign > Trench > ...")
 
 return Features
