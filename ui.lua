@@ -2003,6 +2003,234 @@ local function buildMainWindow(parent)
         notify("✓ Discord link copied!", "success")
     end)
 
+    -- ============================================================
+    -- TAB AUTO FARM (Speed + Auto Steal by Tier + Auto Return)
+    -- ============================================================
+    local farmPage = createPage("AutoFarm")
+    pages.AutoFarm = farmPage
+
+    -- ═══════════════════════════════════════════
+    -- SPEED CARD
+    -- ═══════════════════════════════════════════
+    local speedCard, speedContent = makeCard(farmPage, "⚡ SPEED VALUE", 1)
+
+    makeToggle(speedContent, "Enable Speed", false, function(v)
+        Shared.Speed_Enabled = v
+        local F = _G.VRILZ_Features
+        if F and F.setSpeedEnabled then F.setSpeedEnabled(v) end
+        if v then notify("⚡ Speed: ON", "success")
+        else notify("⚡ Speed: OFF", "info") end
+    end)
+
+    local speedLbl = Instance.new("TextLabel")
+    speedLbl.Size = UDim2.new(1, 0, 0, 16)
+    speedLbl.BackgroundTransparency = 1
+    speedLbl.Text = "Speed: " .. (Shared.Speed_Value or 40)
+    speedLbl.TextColor3 = C.Muted
+    speedLbl.Font = Enum.Font.GothamSemibold
+    speedLbl.TextSize = CFG.FONT_MUTED
+    speedLbl.TextXAlignment = Enum.TextXAlignment.Left
+    speedLbl.LayoutOrder = 2
+    speedLbl.ZIndex = 3
+    speedLbl.Parent = speedContent
+    registerTheme(speedLbl, "Muted", "TextColor3")
+
+    local speedSliderBg = Instance.new("Frame")
+    speedSliderBg.Size = UDim2.new(1, 0, 0, 8)
+    speedSliderBg.BackgroundColor3 = C.Surface3
+    speedSliderBg.BorderSizePixel = 0
+    speedSliderBg.LayoutOrder = 3
+    speedSliderBg.ZIndex = 3
+    speedSliderBg.Parent = speedContent
+    registerTheme(speedSliderBg, "Surface3", "BackgroundColor3")
+
+    local ssbc = Instance.new("UICorner")
+    ssbc.CornerRadius = UDim.new(1, 0)
+    ssbc.Parent = speedSliderBg
+
+    local speedSliderFill = Instance.new("Frame")
+    speedSliderFill.Size = UDim2.new((Shared.Speed_Value or 40) / 500, 0, 1, 0)
+    speedSliderFill.BackgroundColor3 = C.Accent
+    speedSliderFill.BorderSizePixel = 0
+    speedSliderFill.ZIndex = 4
+    speedSliderFill.Parent = speedSliderBg
+    registerTheme(speedSliderFill, "Accent", "BackgroundColor3")
+
+    local ssfc = Instance.new("UICorner")
+    ssfc.CornerRadius = UDim.new(1, 0)
+    ssfc.Parent = speedSliderFill
+
+    local speedSliderBtn = Instance.new("TextButton")
+    speedSliderBtn.Size = UDim2.new(1, 0, 1, 20)
+    speedSliderBtn.Position = UDim2.new(0, 0, 0.5, -10)
+    speedSliderBtn.BackgroundTransparency = 1
+    speedSliderBtn.Text = ""
+    speedSliderBtn.ZIndex = 5
+    speedSliderBtn.Parent = speedSliderBg
+
+    local draggingSpeed = false
+    speedSliderBtn.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+            draggingSpeed = true
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+            draggingSpeed = false
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(i)
+        if draggingSpeed and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+            local mouseX = UserInputService:GetMouseLocation().X
+            local rel = math.clamp((mouseX - speedSliderBg.AbsolutePosition.X) / speedSliderBg.AbsoluteSize.X, 0, 1)
+            local val = math.floor(rel * 500)
+            Shared.Speed_Value = val
+            speedSliderFill.Size = UDim2.new(rel, 0, 1, 0)
+            speedLbl.Text = "Speed: " .. val
+            local F = _G.VRILZ_Features
+            if F and F.setSpeedValue then F.setSpeedValue(val) end
+        end
+    end)
+
+    -- ═══════════════════════════════════════════
+    -- AUTO STEAL CARD (by Tier)
+    -- ═══════════════════════════════════════════
+    local stealCard, stealContent = makeCard(farmPage, "🎯 AUTO STEAL (BY TIER)", 2)
+
+    makeToggle(stealContent, "Auto Steal Egg", false, function(v)
+        Shared.AutoSteal_Enabled = v
+        local F = _G.VRILZ_Features
+        if F and F.setAutoStealEnabled then F.setAutoStealEnabled(v) end
+        if v then notify("🎯 Auto Steal: ON", "success")
+        else notify("🎯 Auto Steal: OFF", "info") end
+    end)
+
+    -- Label tier
+    local tierLbl = Instance.new("TextLabel")
+    tierLbl.Size = UDim2.new(1, 0, 0, 16)
+    tierLbl.BackgroundTransparency = 1
+    tierLbl.Text = "Tier Filter (pilih yang mau di-ambil):"
+    tierLbl.TextColor3 = C.Muted
+    tierLbl.Font = Enum.Font.GothamSemibold
+    tierLbl.TextSize = CFG.FONT_MUTED
+    tierLbl.TextXAlignment = Enum.TextXAlignment.Left
+    tierLbl.LayoutOrder = 3
+    tierLbl.ZIndex = 3
+    tierLbl.Parent = stealContent
+    registerTheme(tierLbl, "Muted", "TextColor3")
+
+    -- Multi-dropdown tier
+    local tierHolder = Instance.new("Frame")
+    tierHolder.Size = UDim2.new(1, 0, 0, CFG.DROPDOWN_H)
+    tierHolder.BackgroundTransparency = 1
+    tierHolder.LayoutOrder = 4
+    tierHolder.ZIndex = 3
+    tierHolder.Parent = stealContent
+
+    local tierList = {"Common", "Coral", "Reef", "Tidal", "Deep", "Abyss", "Trench", "Sovereign", "Celestial", "Eternal"}
+
+    local tierTable = {
+        Common = false, Coral = false, Reef = false, Tidal = false, Deep = false,
+        Abyss = false, Trench = true, Sovereign = true, Celestial = true, Eternal = true,
+    }
+
+    makeDropdownMulti(tierHolder, tierList, tierTable, nil, function(t)
+        local F = _G.VRILZ_Features
+        if F and F.setAutoStealTier then
+            for tier, enabled in pairs(t) do
+                F.setAutoStealTier(tier, enabled)
+            end
+        end
+    end)
+
+    -- Info counter (live per tier)
+    local stealInfoLbl = Instance.new("TextLabel")
+    stealInfoLbl.Size = UDim2.new(1, 0, 0, 60)
+    stealInfoLbl.BackgroundColor3 = C.Surface3
+    stealInfoLbl.BackgroundTransparency = 0.3
+    stealInfoLbl.BorderSizePixel = 0
+    stealInfoLbl.Text = "Loading..."
+    stealInfoLbl.TextColor3 = C.Text
+    stealInfoLbl.Font = Enum.Font.Code
+    stealInfoLbl.TextSize = CFG.FONT_MUTED
+    stealInfoLbl.TextXAlignment = Enum.TextXAlignment.Left
+    stealInfoLbl.TextYAlignment = Enum.TextYAlignment.Top
+    stealInfoLbl.LayoutOrder = 5
+    stealInfoLbl.ZIndex = 3
+    stealInfoLbl.Parent = stealContent
+    registerTheme(stealInfoLbl, "Text", "TextColor3")
+
+    local stealInfoCorner = Instance.new("UICorner")
+    stealInfoCorner.CornerRadius = UDim.new(0, 6)
+    stealInfoCorner.Parent = stealInfoLbl
+
+    local stealInfoPad = Instance.new("UIPadding")
+    stealInfoPad.PaddingLeft = UDim.new(0, 8)
+    stealInfoPad.PaddingTop = UDim.new(0, 6)
+    stealInfoPad.Parent = stealInfoLbl
+
+    task.spawn(function()
+        while stealInfoLbl.Parent do
+            task.wait(1.5)
+            local F = _G.VRILZ_Features
+            if F and F.getEggCountByTier then
+                local counts = F.getEggCountByTier()
+                local lines = {}
+                for _, tier in ipairs(tierList) do
+                    local c = counts[tier] or 0
+                    if c > 0 then
+                        table.insert(lines, tier .. ": " .. c)
+                    end
+                end
+                stealInfoLbl.Text = "Eggs on map:\n" .. table.concat(lines, "  |  ")
+            end
+        end
+    end)
+
+    -- ═══════════════════════════════════════════
+    -- AUTO RETURN CARD
+    -- ═══════════════════════════════════════════
+    local returnCard, returnContent = makeCard(farmPage, "🏠 AUTO RETURN", 3)
+
+    makeToggle(returnContent, "Auto Return to Plot", false, function(v)
+        Shared.AutoReturn_Enabled = v
+        local F = _G.VRILZ_Features
+        if F and F.setAutoReturnEnabled then F.setAutoReturnEnabled(v) end
+        if v then notify("🏠 Auto Return: ON", "success")
+        else notify("🏠 Auto Return: OFF", "info") end
+    end)
+
+    -- Manual return button
+    local returnNowBtn = Instance.new("TextButton")
+    returnNowBtn.Size = UDim2.new(1, 0, 0, 34)
+    returnNowBtn.BackgroundColor3 = C.Accent
+    returnNowBtn.Text = "🏠 RETURN NOW"
+    returnNowBtn.TextColor3 = Color3.new(1, 1, 1)
+    returnNowBtn.Font = Enum.Font.GothamBold
+    returnNowBtn.TextSize = CFG.FONT_LABEL
+    returnNowBtn.AutoButtonColor = false
+    returnNowBtn.LayoutOrder = 3
+    returnNowBtn.ZIndex = 3
+    returnNowBtn.Parent = returnContent
+    registerTheme(returnNowBtn, "Accent", "BackgroundColor3")
+
+    local rnCorner = Instance.new("UICorner")
+    rnCorner.CornerRadius = UDim.new(0, 8)
+    rnCorner.Parent = returnNowBtn
+
+    returnNowBtn.MouseButton1Click:Connect(function()
+        local F = _G.VRILZ_Features
+        if F and F.returnToPlot then
+            if F.returnToPlot() then
+                notify("🏠 Returned to plot!", "success")
+            else
+                notify("❌ Plot not found", "error")
+            end
+        end
+    end)
+
+    registerTab("AutoFarm", "🎣", "Auto Farm")
+    
     registerTab("Info", "ℹ", "Info")
 
     do
