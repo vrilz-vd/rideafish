@@ -1,6 +1,6 @@
 -- ============================================================
 -- VRILZHUB FEATURES — RIDE A FISH
--- Speed · Auto Steal · Auto Return (step by step 200 studs) · Auto Deposit
+-- Speed · Auto Steal · Auto Return (200 studs step) · Auto Deposit
 -- ============================================================
 
 local Players = game:GetService("Players")
@@ -64,10 +64,7 @@ local function smoothTp(hrp, targetPos, stepSize, stepTime)
     stepSize = stepSize or STEP_SIZE
     stepTime = stepTime or STEP_TIME
 
-    if not hrp or not hrp.Parent then
-        print("[TP] ❌ HRP invalid")
-        return false
-    end
+    if not hrp or not hrp.Parent then return false end
 
     local totalDist = (targetPos - hrp.Position).Magnitude
     local steps = math.ceil(totalDist / stepSize)
@@ -76,19 +73,13 @@ local function smoothTp(hrp, targetPos, stepSize, stepTime)
 
     for i = 1, steps do
         local h = getHRP()
-        if not h or not h.Parent then
-            print("[TP] ❌ HRP ilang di step " .. i)
-            break
-        end
+        if not h or not h.Parent then break end
 
         local currentPos = h.Position
         local delta = targetPos - currentPos
         local dist = delta.Magnitude
 
-        if dist < 5 then
-            print("[TP] ✅ Sampe di step " .. i)
-            break
-        end
+        if dist < 5 then break end
 
         local stepDist = math.min(stepSize, dist)
         local nextPos = currentPos + delta.Unit * stepDist
@@ -157,6 +148,38 @@ local function isTierEnabled(tier)
 end
 
 -- ============================================================
+-- IS HOLDING EGG
+-- ============================================================
+local function isHoldingEgg()
+    local char = LP.Character
+    if not char then return false end
+
+    -- Cek 1: Model CarriedSeaEgg di character
+    if char:FindFirstChild("CarriedSeaEgg") then
+        return true, char.CarriedSeaEgg
+    end
+
+    -- Cek 2: Tool apapun di character (kecuali Milkfish)
+    for _, tool in ipairs(char:GetChildren()) do
+        if tool:IsA("Tool") and tool.Name ~= "Milkfish" then
+            return true, tool
+        end
+    end
+
+    -- Cek 3: Tool di backpack (kecuali Milkfish)
+    local backpack = LP:FindFirstChild("Backpack")
+    if backpack then
+        for _, tool in ipairs(backpack:GetChildren()) do
+            if tool:IsA("Tool") and tool.Name ~= "Milkfish" then
+                return true, tool
+            end
+        end
+    end
+
+    return false, nil
+end
+
+-- ============================================================
 -- PLOT
 -- ============================================================
 local function getMyPlot()
@@ -183,56 +206,22 @@ local function getPlotPosition()
     return nil
 end
 
--- ============================================================
--- RETURN STEP BY STEP
--- ============================================================
 Features.returnToPlot = function()
     local hrp = getHRP()
     if not hrp then
         print("[Return] ❌ No HRP")
         return false
     end
-
     local pos = getPlotPosition()
     if not pos then
-        print("[Return] ❌ No plot")
+        print("[Return] ❌ No plot position")
         return false
     end
 
-    local target = pos + Vector3.new(0, 5, 0)
-    print("[Return] 🏠 Returning...")
-    smoothTp(hrp, target)
+    print("[Return] 🏠 Returning step-by-step...")
+    smoothTp(hrp, pos + Vector3.new(0, 5, 0))
     print("[Return] ✅ Done")
     return true
-end
-
--- ============================================================
--- IS HOLDING EGG
--- ============================================================
-local function isHoldingEgg()
-    local char = LP.Character
-    if not char then return false end
-
-    if char:FindFirstChild("CarriedSeaEgg") then
-        return true, char.CarriedSeaEgg
-    end
-
-    for _, tool in ipairs(char:GetChildren()) do
-        if tool:IsA("Tool") and tool.Name ~= "Milkfish" then
-            return true, tool
-        end
-    end
-
-    local backpack = LP:FindFirstChild("Backpack")
-    if backpack then
-        for _, tool in ipairs(backpack:GetChildren()) do
-            if tool:IsA("Tool") and tool.Name ~= "Milkfish" then
-                return true, tool
-            end
-        end
-    end
-
-    return false, nil
 end
 
 -- ============================================================
@@ -291,9 +280,9 @@ Features.depositEgg = function()
     local part = getPromptPart(prompt)
     if not part then return false end
 
-    -- TP smooth ke slot
+    print("[Deposit] 📦 TP ke slot...")
     smoothTp(hrp, part.Position + Vector3.new(0, 3, 0))
-    task.wait(0.15)
+    task.wait(0.3)
 
     local holdTime = (prompt.HoldDuration > 0) and prompt.HoldDuration or 0.3
     if fireproximityprompt then
@@ -308,24 +297,40 @@ Features.depositEgg = function()
         task.wait(0.2)
     end
 
-    print("[Deposit] ✅ Deposited")
+    print("[Deposit] ✅ Done")
     return true
 end
 
 -- ============================================================
--- STEAL
+-- STEAL — TUNGGU SAMPE EGG BENERAN MASUK
 -- ============================================================
 local function stealEgg(egg, hrp)
-    if not egg or not egg.Parent then return false end
+    if not egg or not egg.Parent then
+        print("[Steal] ❌ Egg invalid")
+        return false
+    end
+
     local eggRoot = egg:FindFirstChild("EggRoot")
-    if not eggRoot then return false end
+    if not eggRoot then
+        print("[Steal] ❌ EggRoot ga ketemu")
+        return false
+    end
+
     local prompt = eggRoot:FindFirstChild("TakeSeaEgg")
-    if not prompt then return false end
+    if not prompt then
+        print("[Steal] ❌ Prompt TakeSeaEgg ga ketemu")
+        return false
+    end
 
-    -- ⭐ TP SMOOTH ke egg (step by step, bukan instant)
+    -- ⭐ STEP 1: TP smooth ke egg
+    print("[Steal] 🚶 TP ke egg (" .. egg.Name .. ")")
     smoothTp(hrp, eggRoot.Position + Vector3.new(0, 3, 0))
-    task.wait(0.15)
 
+    -- ⭐ STEP 2: Tunggu 0.3s biar server detect posisi
+    task.wait(0.3)
+
+    -- ⭐ STEP 3: Fire prompt
+    print("[Steal] 🎯 Fire prompt...")
     local holdTime = (prompt.HoldDuration > 0) and prompt.HoldDuration or 0.3
     if fireproximityprompt then
         pcall(function() fireproximityprompt(prompt) end)
@@ -337,7 +342,19 @@ local function stealEgg(egg, hrp)
         end)
     end
 
-    return true
+    -- ⭐ STEP 4: TUNGGU SAMPE EGG BENERAN MASUK (max 3s)
+    print("[Steal] ⏳ Nunggu egg masuk...")
+    local waitStart = tick()
+    while tick() - waitStart < 3 do
+        if isHoldingEgg() then
+            print("[Steal] ✅ Egg masuk!")
+            return true
+        end
+        task.wait(0.1)
+    end
+
+    print("[Steal] ❌ Egg ga masuk (timeout)")
+    return false
 end
 
 -- ============================================================
@@ -364,7 +381,9 @@ task.spawn(function()
             local hrp = getHRP()
             if not hrp then return end
 
-            -- STEP 1: Cari egg
+            -- ═══════════════════════════════════════
+            -- STEP 1: Cari egg target
+            -- ═══════════════════════════════════════
             local eggs = getWildEggs()
             local target = nil
             local closestDist = math.huge
@@ -382,38 +401,48 @@ task.spawn(function()
             end
 
             if not target then
+                print("[AutoFarm] ⚠️ Ga ada egg yang match filter")
                 task.wait(0.5)
                 return
             end
 
-            -- STEP 2: STEAL (TP smooth ke egg)
-            print("[AutoFarm] 🥚 Stealing: " .. target.Name)
-            stealEgg(target, hrp)
+            -- ═══════════════════════════════════════
+            -- STEP 2: STEAL
+            -- ═══════════════════════════════════════
+            print("[AutoFarm] ════════════════════")
+            print("[AutoFarm] 🥚 Target: " .. target.Name)
 
-            local waitStart = tick()
-            while tick() - waitStart < 3 do
-                if isHoldingEgg() then
-                    print("[AutoFarm] ✅ Picked up")
-                    break
-                end
-                task.wait(0.1)
+            local stealOk = stealEgg(target, hrp)
+
+            -- ⭐ STEP 3: KALO STEAL GAGAL, JANGAN RETURN
+            if not stealOk then
+                print("[AutoFarm] ⚠️ Steal gagal, SKIP return + deposit")
+                print("[AutoFarm] ════════════════════")
+                return
             end
 
+            print("[AutoFarm] ✅ Steal sukses")
             task.wait(0.3)
 
-            -- STEP 3: RETURN (TP smooth step by step)
+            -- ═══════════════════════════════════════
+            -- STEP 4: RETURN (cuma kalo steal sukses)
+            -- ═══════════════════════════════════════
             if State.AutoReturn_Enabled and State.AutoReturn_AfterSteal then
                 print("[AutoFarm] 🏠 Returning...")
                 Features.returnToPlot()
                 task.wait(0.3)
             end
 
-            -- STEP 4: DEPOSIT
+            -- ═══════════════════════════════════════
+            -- STEP 5: DEPOSIT
+            -- ═══════════════════════════════════════
             if State.AutoDeposit_Enabled and isHoldingEgg() then
                 print("[AutoFarm] 📦 Depositing...")
                 Features.depositEgg()
                 task.wait(0.5)
             end
+
+            print("[AutoFarm] ════════════════════")
 
         end)
 
