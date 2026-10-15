@@ -2249,35 +2249,6 @@ local function buildMainWindow(parent)
         else notify("🐣 Auto Hatch: OFF", "info") end
     end)
 
-    -- Tombol HATCH NOW
-    local hatchNowBtn = Instance.new("TextButton")
-    hatchNowBtn.Size = UDim2.new(1, 0, 0, 34)
-    hatchNowBtn.BackgroundColor3 = C.Accent
-    hatchNowBtn.Text = "🐣 HATCH NOW"
-    hatchNowBtn.TextColor3 = Color3.new(1, 1, 1)
-    hatchNowBtn.Font = Enum.Font.GothamBold
-    hatchNowBtn.TextSize = CFG.FONT_LABEL
-    hatchNowBtn.AutoButtonColor = false
-    hatchNowBtn.LayoutOrder = 3
-    hatchNowBtn.ZIndex = 3
-    hatchNowBtn.Parent = hatchContent
-    registerTheme(hatchNowBtn, "Accent", "BackgroundColor3")
-
-    local hatchCorner = Instance.new("UICorner")
-    hatchCorner.CornerRadius = UDim.new(0, 8)
-    hatchCorner.Parent = hatchNowBtn
-
-    hatchNowBtn.MouseButton1Click:Connect(function()
-        local F = _G.VRILZ_Features
-        if F and F.autoHatchOnce then
-            if F.autoHatchOnce() then
-                notify("🐣 Hatching...", "success")
-            else
-                notify("❌ Ga ada slot Ready/Growing", "error")
-            end
-        end
-    end)
-
     local hatchNote = Instance.new("TextLabel")
     hatchNote.Size = UDim2.new(1, 0, 0, 30)
     hatchNote.BackgroundTransparency = 1
@@ -2304,33 +2275,6 @@ local function buildMainWindow(parent)
         if F and F.setAutoDepositEnabled then F.setAutoDepositEnabled(v) end
         if v then notify("📦 Auto Deposit: ON", "success")
         else notify("📦 Auto Deposit: OFF", "info") end
-    end)
-
-    -- Tombol DEPOSIT NOW
-    local depositNowBtn = Instance.new("TextButton")
-    depositNowBtn.Size = UDim2.new(1, 0, 0, 34)
-    depositNowBtn.BackgroundColor3 = C.Accent
-    depositNowBtn.Text = "📦 DEPOSIT NOW"
-    depositNowBtn.TextColor3 = Color3.new(1, 1, 1)
-    depositNowBtn.Font = Enum.Font.GothamBold
-    depositNowBtn.TextSize = CFG.FONT_LABEL
-    depositNowBtn.AutoButtonColor = false
-    depositNowBtn.LayoutOrder = 3
-    depositNowBtn.ZIndex = 3
-    depositNowBtn.Parent = depositContent
-    registerTheme(depositNowBtn, "Accent", "BackgroundColor3")
-
-    local depCorner = Instance.new("UICorner")
-    depCorner.CornerRadius = UDim.new(0, 8)
-    depCorner.Parent = depositNowBtn
-
-    depositNowBtn.MouseButton1Click:Connect(function()
-        local F = _G.VRILZ_Features
-        if F and F.depositEgg then
-            local ok = F.depositEgg()
-            if ok then notify("📦 Deposited!", "success")
-            else notify("❌ Ga bisa deposit (backpack kosong / slot penuh)", "error") end
-        end
     end)
 
     local depositNote = Instance.new("TextLabel")
@@ -2367,35 +2311,6 @@ local function buildMainWindow(parent)
         if F and F.setAutoReturnEnabled then F.setAutoReturnEnabled(v) end
         if v then notify("🏠 Auto Return: ON", "success")
         else notify("🏠 Auto Return: OFF", "info") end
-    end)
-
-    -- Tombol RETURN NOW
-    local returnNowBtn = Instance.new("TextButton")
-    returnNowBtn.Size = UDim2.new(1, 0, 0, 34)
-    returnNowBtn.BackgroundColor3 = C.Accent
-    returnNowBtn.Text = "🏠 RETURN NOW"
-    returnNowBtn.TextColor3 = Color3.new(1, 1, 1)
-    returnNowBtn.Font = Enum.Font.GothamBold
-    returnNowBtn.TextSize = CFG.FONT_LABEL
-    returnNowBtn.AutoButtonColor = false
-    returnNowBtn.LayoutOrder = 10
-    returnNowBtn.ZIndex = 3
-    returnNowBtn.Parent = returnContent
-    registerTheme(returnNowBtn, "Accent", "BackgroundColor3")
-
-    local rnCorner = Instance.new("UICorner")
-    rnCorner.CornerRadius = UDim.new(0, 8)
-    rnCorner.Parent = returnNowBtn
-
-    returnNowBtn.MouseButton1Click:Connect(function()
-        local F = _G.VRILZ_Features
-        if F and F.returnToPlot then
-            if F.returnToPlot() then
-                notify("🏠 Returned to plot!", "success")
-            else
-                notify("❌ Plot not found", "error")
-            end
-        end
     end)
 
     local returnNote = Instance.new("TextLabel")
