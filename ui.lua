@@ -1,5 +1,5 @@
 -- ============================================================
--- VRILZHUB UI — RIDE A PET v1.9 (AUTO-DETECT PC & MOBILE)
+-- VRILZHUB UI — RIDE A FISH v1.0 (AUTO-DETECT PC & MOBILE)
 -- PC: 800x580 | Mobile: 88% x 78% viewport
 -- ============================================================
 
@@ -1223,7 +1223,7 @@ local function buildMainWindow(parent)
     subtitle.Size = UDim2.new(0, 300, 0, 14)
     subtitle.Position = UDim2.fromOffset(IS_MOBILE and 48 or 58, IS_MOBILE and 26 or 28)
     subtitle.BackgroundTransparency = 1
-    subtitle.Text = "Ride a Pet · v1.9"
+    subtitle.Text = "Ride a Fish · v1.0"
     subtitle.TextColor3 = C.Muted
     subtitle.Font = Enum.Font.GothamSemibold
     subtitle.TextSize = IS_MOBILE and 9 or 10
@@ -1860,54 +1860,6 @@ local function buildMainWindow(parent)
     sessionLbl.Parent = infoContent
     registerTheme(sessionLbl, "Accent2", "TextColor3")
 
-    local keyTypeLbl = Instance.new("TextLabel")
-    keyTypeLbl.Size = UDim2.new(1, 0, 0, 20)
-    keyTypeLbl.BackgroundTransparency = 1
-    keyTypeLbl.Text = "Key Type: " .. tostring(Shared.KeyType or "UNKNOWN")
-    keyTypeLbl.TextColor3 = C.Text
-    keyTypeLbl.Font = Enum.Font.GothamBold
-    keyTypeLbl.TextSize = CFG.FONT_LABEL
-    keyTypeLbl.TextXAlignment = Enum.TextXAlignment.Left
-    keyTypeLbl.LayoutOrder = 3
-    keyTypeLbl.ZIndex = 3
-    keyTypeLbl.Parent = infoContent
-    registerTheme(keyTypeLbl, "Text", "TextColor3")
-
-    local keyExpiryLbl = Instance.new("TextLabel")
-    keyExpiryLbl.Size = UDim2.new(1, 0, 0, 20)
-    keyExpiryLbl.BackgroundTransparency = 1
-    keyExpiryLbl.TextColor3 = C.Muted
-    keyExpiryLbl.Font = Enum.Font.GothamSemibold
-    keyExpiryLbl.TextSize = CFG.FONT_LABEL
-    keyExpiryLbl.TextXAlignment = Enum.TextXAlignment.Left
-    keyExpiryLbl.LayoutOrder = 4
-    keyExpiryLbl.ZIndex = 3
-    keyExpiryLbl.Parent = infoContent
-    registerTheme(keyExpiryLbl, "Muted", "TextColor3")
-
-    local function refreshKeyInfo()
-        local keyType = tostring(Shared.KeyType or "UNKNOWN"):upper()
-        local expiresAt = tonumber(Shared.KeyExpiresAt or 0) or 0
-        keyTypeLbl.Text = "Key Type: " .. keyType
-        if expiresAt > 0 then
-            local secondsLeft = math.max(0, math.floor(expiresAt / 1000 - os.time()))
-            local days = math.floor(secondsLeft / 86400)
-            local hours = math.floor((secondsLeft % 86400) / 3600)
-            local mins = math.floor((secondsLeft % 3600) / 60)
-            local expiryText = os.date("%d/%m/%Y %H:%M:%S", math.floor(expiresAt / 1000))
-            keyExpiryLbl.Text = string.format("Expired: %s | Remaining: %dd %02dj %02dm", expiryText, days, hours, mins)
-            if secondsLeft <= 0 then
-                keyExpiryLbl.Text = "Expired: KEY EXPIRED"
-                keyExpiryLbl.TextColor3 = C.Error
-            else
-                keyExpiryLbl.TextColor3 = C.Muted
-            end
-        else
-            keyExpiryLbl.Text = "Expired: -"
-        end
-    end
-    refreshKeyInfo()
-
     local sessionStart = os.clock()
     task.spawn(function()
         while sessionLbl.Parent do
@@ -1922,11 +1874,11 @@ local function buildMainWindow(parent)
     local updateCard, updateContent = makeCard(infoPage, "📢 UPDATE INFORMATION", 2)
 
     local infoLines = {
-        "Version        : 1.9",
+        "Version        : 1.0",
         "Last Update    : 29 Sept 2026",
         "Status         : Online ✅",
-        "Changelog      : Live Chat, Tp Mode, Auto Hatch",
-        "                 Auto Event, Farm Name, Fps Boost",
+        "Changelog      : Auto Farm, Tp Mode",
+        "                 Speed, Return Mode",
     }
     for i, line in ipairs(infoLines) do
         local lbl = Instance.new("TextLabel")
@@ -2229,9 +2181,9 @@ local function buildMainWindow(parent)
         end
     end)
 
-    registerTab("AutoFarm", "🎣", "Auto Farm")
-    
     registerTab("Info", "ℹ", "Info")
+    
+    registerTab("AutoFarm", "🎣", "Auto Farm")
 
     do
         local infoLayout = infoPage:FindFirstChildOfClass("UIListLayout")
