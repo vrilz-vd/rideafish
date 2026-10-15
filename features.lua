@@ -1,27 +1,17 @@
 -- ============================================================
 -- VRILZHUB FEATURES — RIDE A FISH
--- Speed · Auto Steal (by Tier) · Auto Return (after steal)
+-- Speed · Auto Steal · Auto Return · Auto Deposit
 -- ============================================================
 
 local Players = game:GetService("Players")
-local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 
 local Features = {}
 _G.VRILZ_Features = Features
 
--- ============================================================
--- TIER LIST (dari rendah ke tinggi)
--- ============================================================
 local TIER_ORDER = {
     "Common", "Coral", "Reef", "Tidal", "Deep",
     "Abyss", "Trench", "Sovereign", "Celestial", "Eternal"
-}
-
-local TIER_LUCK = {
-    Common = 1, Coral = 20, Reef = 400, Tidal = 8000, Deep = 160000,
-    Abyss = 3000000, Trench = 60000000, Sovereign = 1000000000,
-    Celestial = 20000000000, Eternal = 70000000000
 }
 
 -- ============================================================
@@ -34,22 +24,14 @@ local State = {
     AutoSteal_Enabled = false,
     AutoSteal_Delay = 0.4,
     AutoSteal_Tiers = {
-        Common = false,
-        Coral = false,
-        Reef = false,
-        Tidal = false,
-        Deep = false,
-        Abyss = false,
-        Trench = true,
-        Sovereign = true,
-        Celestial = true,
-        Eternal = true,
+        Common = false, Coral = false, Reef = false, Tidal = false, Deep = false,
+        Abyss = false, Trench = true, Sovereign = true, Celestial = true, Eternal = true,
     },
 
-    AutoReturn_Enabled = true,          -- ⭐ return aktif
-    AutoReturn_AfterSteal = true,       -- ⭐ return SETELAH STEAL (bukan timer)
-    AutoReturn_Interval = 30,           -- fallback timer (kalau AfterSteal OFF)
-    AutoReturn_Mode = "Plot",
+    AutoReturn_Enabled = true,
+    AutoReturn_AfterSteal = true,
+
+    AutoDeposit_Enabled = true,
 }
 
 -- ============================================================
@@ -72,13 +54,8 @@ local function getHum()
 end
 
 -- ============================================================
--- 1. SPEED
+-- SPEED
 -- ============================================================
-Features.setSpeed = function(value)
-    local hum = getHum()
-    if hum then hum.WalkSpeed = value end
-end
-
 Features.setSpeedEnabled = function(v)
     State.Speed_Enabled = v
     if not v then
@@ -89,7 +66,10 @@ end
 
 Features.setSpeedValue = function(v)
     State.Speed_Value = v
-    if State.Speed_Enabled then Features.setSpeed(v) end
+    if State.Speed_Enabled then
+        local hum = getHum()
+        if hum then hum.WalkSpeed = v end
+    end
 end
 
 task.spawn(function()
@@ -104,7 +84,7 @@ task.spawn(function()
 end)
 
 -- ============================================================
--- 2. AUTO STEAL — by Tier
+-- WILDEGGS
 -- ============================================================
 local function getWildEggs()
     local eggRT = workspace:FindFirstChild("EggRuntime")
@@ -118,26 +98,17 @@ local function getEggTier(egg)
     return egg:GetAttribute("EggTier") or "Unknown"
 end
 
-local function getEggKg(egg)
-    return egg:GetAttribute("EggKg") or 0
-end
-
-local function getEggLuck(egg)
-    return egg:GetAttribute("EggLuck") or 0
-end
-
 local function isTierEnabled(tier)
     return State.AutoSteal_Tiers[tier] == true
 end
 
 -- ============================================================
--- 3. AUTO RETURN (fungsi)
+-- PLOT & HATCHRACK
 -- ============================================================
 local function getMyPlot()
-    local myId = LP.UserId
     for i = 1, 10 do
         local pot = workspace:FindFirstChild("Player Pot " .. i)
-        if pot and pot:GetAttribute("OwnerUserId") == myId then
+        if pot and pot:GetAttribute("OwnerUserId") == LP.UserId then
             return pot
         end
     end
@@ -146,13 +117,9 @@ end
 
 local function getPlotPosition()
     local plot = getMyPlot()
-    if plot then
-        return plot:GetPivot().Position
-    end
+    if plot then return plot:GetPivot().Position end
     local hp = workspace:FindFirstChild("HomepointMarker")
-    if hp then
-        return hp:GetPivot().Position
-    end
+    if hp then return hp:GetPivot().Position end
     return nil
 end
 
@@ -167,8 +134,95 @@ Features.returnToPlot = function()
     return false
 end
 
+-- Cek apakah karakter lagi bawa egg (Tool "Common Egg" dll)
+local function isHoldingEgg()
+    local char = LP.Character
+    if not char then return false end
+    for _, tool in ipairs(char:GetChildren()) do
+        if tool:IsA("Tool") then
+            local nameLower = tool.Name:lower()
+            if nameLower:find("egg") and not nameLower:find("milkfish") then
+                return true, tool
+            end
+        end
+    end
+    return false, nil
+end
+
+-- Cari prompt DepositSeaEgg di slot kosong
+local function findEmptyHatchPrompt()
+    local plot = getMyPlot()
+    if not plot then return nil end
+    local rack = plot:FindFirstChild("HatchRack")
+    if not rack then return nil end
+
+    for _, prompt in ipairs(rack:GetDescendants()) do
+        if prompt:IsA("ProximityPrompt")
+           and prompt.Name == "DepositSeaEgg"
+           and prompt.Enabled
+        then
+            -- Cek apakah slot kosong (ga ada model egg di dalam Box Telur)
+            local eggInteract = prompt.Parent
+            local slotBox = eggInteract and eggInteract.Parent
+            if slotBox then
+                local hasEgg = false
+                for _, child in ipairs(slotBox:GetChildren()) do
+                    if child:IsA("Model") and child:FindFirstChild("EggRoot") then
+                        hasEgg = true
+                        break
+                    end
+                end
+                if not hasEgg then
+                    return prompt
+                end
+            end
+        end
+    end
+    return nil
+end
+
+-- Get BasePart dari prompt buat TP
+local function getPromptPart(prompt)
+    local p = prompt.Parent
+    while p and not p:IsA("BasePart") do
+        p = p.Parent
+    end
+    return p
+end
+
+-- Deposit egg ke HatchRack
+Features.depositEgg = function()
+    local hrp = getHRP()
+    if not hrp then return false, "no hrp" end
+
+    -- Cek bener-bener bawa egg
+    local holding, tool = isHoldingEgg()
+    if not holding then return false, "not holding egg" end
+
+    local prompt = findEmptyHatchPrompt()
+    if not prompt then return false, "no empty slot" end
+
+    local part = getPromptPart(prompt)
+    if not part then return false, "no prompt part" end
+
+    hrp.CFrame = CFrame.new(part.Position + Vector3.new(0, 3, 0))
+    task.wait(0.15)
+
+    pcall(function()
+        if fireproximityprompt then
+            fireproximityprompt(prompt)
+        else
+            prompt:InputHoldBegin()
+            task.wait(0.35)
+            prompt:InputHoldEnd()
+        end
+    end)
+
+    return true, "deposited"
+end
+
 -- ============================================================
--- 4. STEAL 1 EGG
+-- STEAL 1 EGG
 -- ============================================================
 local function stealEgg(egg, hrp)
     if not egg or not egg.Parent then return false end
@@ -193,7 +247,7 @@ local function stealEgg(egg, hrp)
 end
 
 -- ============================================================
--- 5. MAIN LOOP — STEAL → RETURN → STEAL → RETURN...
+-- MAIN LOOP
 -- ============================================================
 task.spawn(function()
     while task.wait(0.1) do
@@ -202,7 +256,7 @@ task.spawn(function()
         local hrp = getHRP()
         if not hrp then continue end
 
-        -- Cari egg target (terdekat + tier enabled)
+        -- STEP 1: Cari egg target
         local eggs = getWildEggs()
         local target = nil
         local closestDist = math.huge
@@ -210,10 +264,8 @@ task.spawn(function()
         for _, egg in ipairs(eggs) do
             local tier = getEggTier(egg)
             if not isTierEnabled(tier) then continue end
-
             local eggRoot = egg:FindFirstChild("EggRoot")
             if not eggRoot then continue end
-
             local dist = (eggRoot.Position - hrp.Position).Magnitude
             if dist < closestDist then
                 closestDist = dist
@@ -221,47 +273,31 @@ task.spawn(function()
             end
         end
 
-        -- Kalau ada target, steal
-        if target then
-            stealEgg(target, hrp)
-            task.wait(State.AutoSteal_Delay)
-
-            -- ⭐ RETURN SETELAH STEAL
-            if State.AutoReturn_Enabled and State.AutoReturn_AfterSteal then
-                Features.returnToPlot()
-                task.wait(0.5)   -- kasih waktu buat landing
-            end
-        else
-            -- Ga ada egg yang match filter → tunggu bentar
+        if not target then
             task.wait(0.5)
+            continue
         end
-    end
-end)
 
--- ============================================================
--- 6. TIMER RETURN (fallback, cuma kalau AfterSteal OFF)
--- ============================================================
-task.spawn(function()
-    local lastReturn = tick()
-    while task.wait(1) do
-        if not State.AutoReturn_Enabled then
-            lastReturn = tick()
-            continue
-        end
-        if State.AutoReturn_AfterSteal then
-            -- skip, karena udah di-handle di main loop
-            lastReturn = tick()
-            continue
-        end
-        if tick() - lastReturn >= State.AutoReturn_Interval then
+        -- STEP 2: Steal egg
+        stealEgg(target, hrp)
+        task.wait(State.AutoSteal_Delay)
+
+        -- STEP 3: Return ke plot
+        if State.AutoReturn_Enabled and State.AutoReturn_AfterSteal then
             Features.returnToPlot()
-            lastReturn = tick()
+            task.wait(0.4)
+
+            -- STEP 4: Deposit ke HatchRack
+            if State.AutoDeposit_Enabled then
+                Features.depositEgg()
+                task.wait(0.5)
+            end
         end
     end
 end)
 
 -- ============================================================
--- SETTERS (dipanggil dari UI)
+-- SETTERS
 -- ============================================================
 Features.setAutoStealEnabled = function(v)
     State.AutoSteal_Enabled = v
@@ -283,11 +319,10 @@ Features.setAutoReturnAfterSteal = function(v)
     State.AutoReturn_AfterSteal = v
 end
 
-Features.setAutoReturnInterval = function(v)
-    State.AutoReturn_Interval = v
+Features.setAutoDepositEnabled = function(v)
+    State.AutoDeposit_Enabled = v
 end
 
--- Hitung egg per tier (buat UI counter)
 Features.getEggCountByTier = function()
     local counts = {}
     for _, tier in ipairs(TIER_ORDER) do counts[tier] = 0 end
@@ -306,8 +341,11 @@ Features.getState = function()
     return State
 end
 
+Features.isHoldingEgg = isHoldingEgg
+Features.getMyPlot = getMyPlot
+
 print("[Features] Ride a Fish loaded ✅")
 print("[Features] WildEggs: " .. #getWildEggs())
-print("[Features] Tier list: " .. table.concat(TIER_ORDER, ", "))
+print("[Features] My plot: " .. tostring(getMyPlot() and getMyPlot().Name or "not found"))
 
 return Features
