@@ -2138,7 +2138,43 @@ local function buildMainWindow(parent)
             end
         end
     end)
-  
+
+    -- ═══════════════════════════════════════════
+    -- AUTO RETURN CARD
+    -- ═══════════════════════════════════════════
+    local returnCard, returnContent = makeCard(farmPage, "🏠 AUTO RETURN", 3)
+
+    makeToggle(returnContent, "Return After Each Steal", false, function(v)
+        Shared.AutoReturn_AfterSteal = v
+        local F = _G.VRILZ_Features
+        if F and F.setAutoReturnAfterSteal then F.setAutoReturnAfterSteal(v) end
+        if v then notify("🏠 Return After Steal: ON", "success")
+        else notify("🏠 Return After Steal: OFF", "info") end
+    end)
+
+    makeToggle(returnContent, "Enable Auto Return", false, function(v)
+        Shared.AutoReturn_Enabled = v
+        local F = _G.VRILZ_Features
+        if F and F.setAutoReturnEnabled then F.setAutoReturnEnabled(v) end
+        if v then notify("🏠 Auto Return: ON", "success")
+        else notify("🏠 Auto Return: OFF", "info") end
+    end)
+
+    local returnNote = Instance.new("TextLabel")
+    returnNote.Size = UDim2.new(1, 0, 0, 30)
+    returnNote.BackgroundTransparency = 1
+    returnNote.Text = "Return step-by-step (200 studs/step)\nbiar ga keliatan TP instan"
+    returnNote.TextColor3 = C.Muted
+    returnNote.Font = Enum.Font.GothamSemibold
+    returnNote.TextSize = CFG.FONT_MUTED
+    returnNote.TextWrapped = true
+    returnNote.TextXAlignment = Enum.TextXAlignment.Left
+    returnNote.TextYAlignment = Enum.TextYAlignment.Top
+    returnNote.LayoutOrder = 11
+    returnNote.ZIndex = 3
+    returnNote.Parent = returnContent
+    registerTheme(returnNote, "Muted", "TextColor3")
+    
     -- ============================================================
     -- TAB PLOT (HatchRack Status + Auto Hatch + Auto Deposit)
     -- ============================================================
@@ -2250,46 +2286,8 @@ local function buildMainWindow(parent)
     depositNote.Parent = depositContent
     registerTheme(depositNote, "Muted", "TextColor3")
 
-    -- ═══════════════════════════════════════════
-    -- AUTO RETURN CARD
-    -- ═══════════════════════════════════════════
-    local returnCard, returnContent = makeCard(plotPage, "🏠 AUTO RETURN", 4)
-
-      makeToggle(returnContent, "Return After Each Steal", false, function(v)
-        Shared.AutoReturn_AfterSteal = v
-        local F = _G.VRILZ_Features
-        if F and F.setAutoReturnAfterSteal then F.setAutoReturnAfterSteal(v) end
-        if v then notify("🏠 Return After Steal: ON", "success")
-        else notify("🏠 Return After Steal: OFF", "info") end
-    end)
-
-    makeToggle(returnContent, "Enable Auto Return", false, function(v)
-        Shared.AutoReturn_Enabled = v
-        local F = _G.VRILZ_Features
-        if F and F.setAutoReturnEnabled then F.setAutoReturnEnabled(v) end
-        if v then notify("🏠 Auto Return: ON", "success")
-        else notify("🏠 Auto Return: OFF", "info") end
-    end)
-    
-    local returnNote = Instance.new("TextLabel")
-    returnNote.Size = UDim2.new(1, 0, 0, 30)
-    returnNote.BackgroundTransparency = 1
-    returnNote.Text = "Return step-by-step (200 studs/step)\nbiar ga keliatan TP instan"
-    returnNote.TextColor3 = C.Muted
-    returnNote.Font = Enum.Font.GothamSemibold
-    returnNote.TextSize = CFG.FONT_MUTED
-    returnNote.TextWrapped = true
-    returnNote.TextXAlignment = Enum.TextXAlignment.Left
-    returnNote.TextYAlignment = Enum.TextYAlignment.Top
-    returnNote.LayoutOrder = 11
-    returnNote.ZIndex = 3
-    returnNote.Parent = returnContent
-    registerTheme(returnNote, "Muted", "TextColor3")
-
     registerTab("Info", "ℹ", "Info")
-    
     registerTab("AutoFarm", "🎣", "Auto Farm")
-    
     registerTab("Plot", "🏠", "Plot")
 
     do
@@ -2346,7 +2344,7 @@ local function buildMainWindow(parent)
 
     return main
 end
-
+    
 -- ============================================================
 -- LOADING SCREEN BRUTAL
 -- ============================================================
